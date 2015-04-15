@@ -2923,8 +2923,9 @@ static irqreturn_t ipu_sync_irq_handler(int irq, void *desc)
 	uint32_t line, bit, int_stat, int_ctrl;
 	irqreturn_t result = IRQ_NONE;
 	const int int_reg[] = { 1, 2, 3, 4, 11, 12, 13, 14, 15, 0 };
+	unsigned long flags;
 
-	spin_lock(&ipu->int_reg_spin_lock);
+	spin_lock_irqsave(&ipu->int_reg_spin_lock, flags);
 
 	for (i = 0; int_reg[i] != 0; i++) {
 		int_stat = ipu_cm_read(ipu,
@@ -2949,7 +2950,7 @@ static irqreturn_t ipu_sync_irq_handler(int irq, void *desc)
 		}
 	}
 
-	spin_unlock(&ipu->int_reg_spin_lock);
+	spin_unlock_irqrestore(&ipu->int_reg_spin_lock, flags);
 
 	return result;
 }
@@ -2960,8 +2961,9 @@ static irqreturn_t ipu_err_irq_handler(int irq, void *desc)
 	int i;
 	uint32_t int_stat;
 	const int err_reg[] = { 5, 6, 9, 10, 0 };
+	unsigned long flags;
 
-	spin_lock(&ipu->int_reg_spin_lock);
+	spin_lock_irqsave(&ipu->int_reg_spin_lock, flags);
 
 	for (i = 0; err_reg[i] != 0; i++) {
 		int_stat = ipu_cm_read(ipu,
@@ -2980,7 +2982,7 @@ static irqreturn_t ipu_err_irq_handler(int irq, void *desc)
 		}
 	}
 
-	spin_unlock(&ipu->int_reg_spin_lock);
+	spin_unlock_irqrestore(&ipu->int_reg_spin_lock, flags);
 
 	return IRQ_HANDLED;
 }
