@@ -414,7 +414,7 @@ static int fec_ptp_adjfreq(struct ptp_clock_info *ptp, s32 ppb)
 	unsigned long flags;
 	u32 inc, cor, pc;
 
-	inc = FEC_T_PERIOD_ONE_SEC / fep->cycle_speed;
+	inc = fep->ptp_inc;
 	if (ppb == 0) {
 		cor = 0;
 		pc = 0;
