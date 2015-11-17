@@ -102,14 +102,14 @@ static u64 fec_ptp_read(struct cyclecounter *cc)
 		container_of(cc, struct fec_enet_private, cc);
 	u32 tempval;
 
-	tempval = readl(fep->hwp + FEC_ATIME_CTRL);
+	tempval = readl_relaxed(fep->hwp + FEC_ATIME_CTRL);
 	tempval |= FEC_T_CTRL_CAPTURE;
 	writel(tempval, fep->hwp + FEC_ATIME_CTRL);
 
 	if (fep->quirks & FEC_QUIRK_BUG_CAPTURE)
 		udelay(1);
 
-	return readl(fep->hwp + FEC_ATIME);
+	return readl_relaxed(fep->hwp + FEC_ATIME);
 }
 
 /**
@@ -126,16 +126,16 @@ static int fec_ptp_enable_pps(struct fec_enet_private *fep, uint enable)
 	struct timespec64 ts;
 	u64 ns;
 
-	spin_lock_irqsave(&fep->tmreg_lock, flags);
+	raw_spin_lock_irqsave(&fep->tmreg_lock, flags);
 
 	if (fep->perout_enable) {
-		spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+		raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 		dev_err(&fep->pdev->dev, "PEROUT is running");
 		return -EBUSY;
 	}
 
 	if (fep->pps_enable == enable) {
-		spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+		raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 		return 0;
 	}
 
@@ -222,7 +222,7 @@ static int fec_ptp_enable_pps(struct fec_enet_private *fep, uint enable)
 	}
 
 	fep->pps_enable = enable;
-	spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+	raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 
 	return 0;
 }
@@ -233,7 +233,7 @@ static int fec_ptp_pps_perout(struct fec_enet_private *fep)
 	u64 curr_time;
 	unsigned long flags;
 
-	spin_lock_irqsave(&fep->tmreg_lock, flags);
+	raw_spin_lock_irqsave(&fep->tmreg_lock, flags);
 
 	/* Update time counter */
 	timecounter_read(&fep->tc);
@@ -251,7 +251,7 @@ static int fec_ptp_pps_perout(struct fec_enet_private *fep)
 	if (fep->perout_stime < curr_time + 100 * NSEC_PER_MSEC) {
 		fep->perout_enable = false;
 		dev_err(&fep->pdev->dev, "Current time is too close to the start time!\n");
-		spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+		raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 		return -1;
 	}
 
@@ -279,7 +279,7 @@ static int fec_ptp_pps_perout(struct fec_enet_private *fep)
 	 */
 	writel(fep->next_counter, fep->hwp + FEC_TCCR(fep->pps_channel));
 	fep->next_counter = (fep->next_counter + fep->reload_period) & fep->cc.mask;
-	spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+	raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 
 	return 0;
 }
@@ -331,25 +331,23 @@ void fec_ptp_start_cyclecounter(struct net_device *ndev)
 	inc = 1000000000 / fep->cycle_speed;
 
 	/* grab the ptp lock */
-	spin_lock_irqsave(&fep->tmreg_lock, flags);
+	raw_spin_lock_irqsave(&fep->tmreg_lock, flags);
 
 	/* 1ns counter, disable correction period */
-	writel(0, fep->hwp + FEC_ATIME_CORR);
-	writel(inc << FEC_T_INC_OFFSET, fep->hwp + FEC_ATIME_INC);
+	writel_relaxed(0, fep->hwp + FEC_ATIME_CORR);
+	writel_relaxed(inc << FEC_T_INC_OFFSET, fep->hwp + FEC_ATIME_INC);
 
 
 #ifdef CONFIG_AVB_SUPPORT
 	/* use 32-bits timer counter */
-	writel(0, fep->hwp + FEC_ATIME_EVT_PERIOD);
-	writel(FEC_T_CTRL_ENABLE, fep->hwp + FEC_ATIME_CTRL);
+	writel_relaxed(0, fep->hwp + FEC_ATIME_EVT_PERIOD);
+	writel_relaxed(FEC_T_CTRL_ENABLE, fep->hwp + FEC_ATIME_CTRL);
 #else
 	/* use 31-bit timer counter */
-	writel(FEC_COUNTER_PERIOD, fep->hwp + FEC_ATIME_EVT_PERIOD);
-
-	writel(FEC_T_CTRL_ENABLE | FEC_T_CTRL_PERIOD_RST,
+	writel_relaxed(FEC_COUNTER_PERIOD, fep->hwp + FEC_ATIME_EVT_PERIOD);
+	writel_relaxed(FEC_T_CTRL_ENABLE | FEC_T_CTRL_PERIOD_RST,
 		fep->hwp + FEC_ATIME_CTRL);
 #endif
-
 
 	memset(&fep->cc, 0, sizeof(fep->cc));
 	fep->cc.read = fec_ptp_read;
@@ -369,7 +367,7 @@ void fec_ptp_start_cyclecounter(struct net_device *ndev)
 	timecounter_init(&fep->tc, &fep->cc, 0);
 #endif
 
-	spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+	raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 }
 
 #ifdef CONFIG_AVB_SUPPORT
@@ -436,12 +434,12 @@ static int fec_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 		pc = (((fep->cycle_speed / (2*ppb)) - 1) + 1) & ~ 0x1; // + 1) & ~ 0x1 returns the closest even value
 	}
 
-	spin_lock_irqsave(&fep->tmreg_lock, flags);
+	raw_spin_lock_irqsave(&fep->tmreg_lock, flags);
 
-	writel((cor << FEC_T_INC_CORR_OFFSET) | (inc << FEC_T_INC_OFFSET), fep->hwp + FEC_ATIME_INC);
-	writel(pc, fep->hwp + FEC_ATIME_CORR);
+	writel_relaxed((cor << FEC_T_INC_CORR_OFFSET) | (inc << FEC_T_INC_OFFSET), fep->hwp + FEC_ATIME_INC);
+	writel_relaxed(pc, fep->hwp + FEC_ATIME_CORR);
 
-	spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+	raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 
 	return 0;
 }
@@ -463,19 +461,19 @@ static int fec_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 	u64 now, then;
 	s64 real_delta;
 
-	spin_lock_irqsave(&fep->tmreg_lock, flags);
+	raw_spin_lock_irqsave(&fep->tmreg_lock, flags);
 
 	now = timecounter_read(&fep->tc);
 	then = timecounter_read(&fep->tc);
 
-	real_delta = delta - (then - now);
+	real_delta = delta + (then - now);
 
 	now = timecounter_read(&fep->tc);
 	now += real_delta;
 
 	fec_timecounter_set(fep, now);
 
-	spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+	raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 
 	return 0;
 }
@@ -499,9 +497,9 @@ static int fec_ptp_settime(struct ptp_clock_info *ptp,
 	ns = ts->tv_sec * 1000000000ULL;
 	ns += ts->tv_nsec;
 
-	spin_lock_irqsave(&fep->tmreg_lock, flags);
+	raw_spin_lock_irqsave(&fep->tmreg_lock, flags);
 	fec_timecounter_set(fep, ns);
-	spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+	raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 	return 0;
 }
 #else /* CONFIG_AVB_SUPPORT */
@@ -566,7 +564,7 @@ static int fec_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 	else
 		corr_ns = fep->ptp_inc + corr_inc;
 
-	spin_lock_irqsave(&fep->tmreg_lock, flags);
+	raw_spin_lock_irqsave(&fep->tmreg_lock, flags);
 
 	tmp = readl(fep->hwp + FEC_ATIME_INC) & FEC_T_INC_MASK;
 	tmp |= corr_ns << FEC_T_INC_CORR_OFFSET;
@@ -576,7 +574,7 @@ static int fec_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 	/* dummy read to update the timer. */
 	timecounter_read(&fep->tc);
 
-	spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+	raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 
 	return 0;
 }
@@ -594,9 +592,9 @@ static int fec_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 	    container_of(ptp, struct fec_enet_private, ptp_caps);
 	unsigned long flags;
 
-	spin_lock_irqsave(&fep->tmreg_lock, flags);
+	raw_spin_lock_irqsave(&fep->tmreg_lock, flags);
 	timecounter_adjtime(&fep->tc, delta);
-	spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+	raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 
 	return 0;
 }
@@ -632,10 +630,10 @@ static int fec_ptp_settime(struct ptp_clock_info *ptp,
 	 */
 	counter = ns & fep->cc.mask;
 
-	spin_lock_irqsave(&fep->tmreg_lock, flags);
+	raw_spin_lock_irqsave(&fep->tmreg_lock, flags);
 	writel(counter, fep->hwp + FEC_ATIME);
 	timecounter_init(&fep->tc, &fep->cc, ns);
-	spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+	raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 	mutex_unlock(&fep->ptp_clk_mutex);
 	return 0;
 }
@@ -663,9 +661,9 @@ static int fec_ptp_gettime(struct ptp_clock_info *ptp, struct timespec64 *ts)
 		mutex_unlock(&fep->ptp_clk_mutex);
 		return -EINVAL;
 	}
-	spin_lock_irqsave(&fep->tmreg_lock, flags);
+	raw_spin_lock_irqsave(&fep->tmreg_lock, flags);
 	ns = timecounter_read(&fep->tc);
-	spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+	raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 	mutex_unlock(&fep->ptp_clk_mutex);
 
 	ts->tv_sec = div_u64_rem(ns, 1000000000ULL, &remainder);
@@ -680,10 +678,10 @@ static int fec_ptp_pps_disable(struct fec_enet_private *fep, uint channel)
 
 	hrtimer_cancel(&fep->perout_timer);
 
-	spin_lock_irqsave(&fep->tmreg_lock, flags);
+	raw_spin_lock_irqsave(&fep->tmreg_lock, flags);
 	fep->perout_enable = false;
 	writel(0, fep->hwp + FEC_TCSR(channel));
-	spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+	raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 
 	return 0;
 }
@@ -749,7 +747,7 @@ static int fec_ptp_enable(struct ptp_clock_info *ptp,
 				mutex_unlock(&fep->ptp_clk_mutex);
 				return -EOPNOTSUPP;
 			}
-			spin_lock_irqsave(&fep->tmreg_lock, flags);
+			raw_spin_lock_irqsave(&fep->tmreg_lock, flags);
 
 			if (fep->pps_enable) {
 				dev_err(&fep->pdev->dev, "PPS is running");
@@ -780,7 +778,7 @@ static int fec_ptp_enable(struct ptp_clock_info *ptp,
 			fep->perout_enable = true;
 
 unlock:
-			spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+			raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 			mutex_unlock(&fep->ptp_clk_mutex);
 
 			if (ret)
@@ -860,9 +858,9 @@ static void fec_time_keep(struct work_struct *work)
 
 	mutex_lock(&fep->ptp_clk_mutex);
 	if (fep->ptp_clk_on) {
-		spin_lock_irqsave(&fep->tmreg_lock, flags);
+		raw_spin_lock_irqsave(&fep->tmreg_lock, flags);
 		timecounter_read(&fep->tc);
-		spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+		raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 	}
 	mutex_unlock(&fep->ptp_clk_mutex);
 
@@ -950,7 +948,7 @@ void fec_ptp_init(struct platform_device *pdev, int irq_idx)
 	fep->ptp_caps.settime64 = fec_ptp_settime;
 	fep->ptp_caps.enable = fec_ptp_enable;
 
-	spin_lock_init(&fep->tmreg_lock);
+	raw_spin_lock_init(&fep->tmreg_lock);
 
 	fec_ptp_start_cyclecounter(ndev);
 
@@ -987,7 +985,7 @@ void fec_ptp_save_state(struct fec_enet_private *fep)
 	unsigned long flags;
 	u32 atime_inc_corr;
 
-	spin_lock_irqsave(&fep->tmreg_lock, flags);
+	raw_spin_lock_irqsave(&fep->tmreg_lock, flags);
 
 	fep->ptp_saved_state.pps_enable = fep->pps_enable;
 
@@ -998,7 +996,7 @@ void fec_ptp_save_state(struct fec_enet_private *fep)
 	atime_inc_corr = readl(fep->hwp + FEC_ATIME_INC) & FEC_T_INC_CORR_MASK;
 	fep->ptp_saved_state.at_inc_corr = (u8)(atime_inc_corr >> FEC_T_INC_CORR_OFFSET);
 
-	spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+	raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 }
 
 /* Restore PTP functionality after a reset */
@@ -1009,7 +1007,7 @@ void fec_ptp_restore_state(struct fec_enet_private *fep)
 	u32 counter;
 	u64 ns;
 
-	spin_lock_irqsave(&fep->tmreg_lock, flags);
+	raw_spin_lock_irqsave(&fep->tmreg_lock, flags);
 
 	/* Reset turned it off, so adjust our status flag */
 	fep->pps_enable = 0;
@@ -1023,7 +1021,7 @@ void fec_ptp_restore_state(struct fec_enet_private *fep)
 	writel(counter, fep->hwp + FEC_ATIME);
 	timecounter_init(&fep->tc, &fep->cc, ns);
 
-	spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+	raw_spin_unlock_irqrestore(&fep->tmreg_lock, flags);
 
 	/* Restart PPS if needed */
 	if (fep->ptp_saved_state.pps_enable) {
