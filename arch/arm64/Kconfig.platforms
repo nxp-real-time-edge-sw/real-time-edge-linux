@@ -271,6 +271,12 @@ config LX2160A_BAREMETAL
 	help
 	  This enables support for NXP LX2160A baremetal.
 
+config LS1028A_BAREMETAL
+	bool "NXP LS1028A baremetal support"
+	select BAREMETAL
+	help
+	  This enables support for NXP LS1028A baremetal.
+
 config ARCH_MXC
 	bool "NXP i.MX SoC family"
 	select ARM64_ERRATUM_843419
