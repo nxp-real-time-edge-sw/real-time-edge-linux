@@ -71,7 +71,7 @@ config FSL_DPAA_ADVANCED_DRIVERS
 config FSL_DPAA_TS
 	bool "Linux compliant timestamping"
 	depends on FSL_SDK_DPAA_ETH
-	default n
+	default y
 	help
 	  Enable Linux API compliant timestamping support.
 
