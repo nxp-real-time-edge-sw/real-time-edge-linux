@@ -1097,7 +1097,7 @@ static void ocelot_encode_ports_to_mdb(unsigned char *addr,
 				       struct ocelot_multicast *mc,
 				       enum macaccess_entry_type entry_type)
 {
-	memcpy(addr, mc->addr, ETH_ALEN);
+	ether_addr_copy(addr, mc->addr);
 
 	if (entry_type == ENTRYTYPE_MACv4) {
 		addr[0] = 0;
@@ -1142,7 +1142,7 @@ int ocelot_port_mdb_add(struct ocelot *ocelot, int port,
 		if (!mc)
 			return -ENOMEM;
 
-		memcpy(mc->addr, mdb->addr, ETH_ALEN);
+		ether_addr_copy(mc->addr, mdb->addr);
 		mc->vid = vid;
 		mc->pgid = pgid;
 
