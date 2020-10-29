@@ -43,6 +43,7 @@ struct frame_info {
 
 struct ocelot_multicast {
 	struct list_head list;
+	enum macaccess_entry_type entry_type;
 	unsigned char addr[ETH_ALEN];
 	u16 vid;
 	u16 ports;
