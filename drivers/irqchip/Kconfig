@@ -607,4 +607,8 @@ config MST_IRQ
 	help
 	  Support MStar Interrupt Controller.
 
+config BAREMETAL
+	bool
+	depends on ARM_GIC || ARM_GIC_V3
+
 endmenu
