@@ -244,6 +244,7 @@
 	pinctrl-0 = <&pinctrl_eqos>;
 	phy-mode = "rgmii-id";
 	phy-handle = <&ethphy0>;
+	snps,force_thresh_dma_mode;
 	snps,mtl-tx-config = <&txnode>;
 	snps,mtl-rx-config = <&rxnode>;
 	status = "okay";
