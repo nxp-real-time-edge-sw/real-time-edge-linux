@@ -63,8 +63,9 @@ struct stmmac_tx_queue {
 
 struct stmmac_rx_buffer {
 	struct page *page;
-	struct page *sec_page;
 	dma_addr_t addr;
+	__u32 page_offset;
+	struct page *sec_page;
 	dma_addr_t sec_addr;
 };
 
@@ -247,6 +248,9 @@ struct stmmac_priv {
 
 	/* Receive Side Scaling */
 	struct stmmac_rss rss;
+
+	/* XDP BPF Program */
+	struct bpf_prog *xdp_prog;
 };
 
 enum stmmac_state {
@@ -263,6 +267,8 @@ void stmmac_set_ethtool_ops(struct net_device *netdev);
 
 void stmmac_ptp_register(struct stmmac_priv *priv);
 void stmmac_ptp_unregister(struct stmmac_priv *priv);
+int stmmac_open(struct net_device *dev);
+int stmmac_release(struct net_device *dev);
 int stmmac_resume(struct device *dev);
 int stmmac_suspend(struct device *dev);
 int stmmac_dvr_remove(struct device *dev);
@@ -276,6 +282,19 @@ int stmmac_reinit_ringparam(struct net_device *dev, u32 rx_size, u32 tx_size);
 struct timespec64 stmmac_calc_tas_basetime(ktime_t old_base_time,
 					   ktime_t current_time,
 					   u64 cycle_time);
+
+static inline bool stmmac_xdp_is_enabled(struct stmmac_priv *priv)
+{
+	return !!priv->xdp_prog;
+}
+
+static inline unsigned int stmmac_rx_offset(struct stmmac_priv *priv)
+{
+	if (stmmac_xdp_is_enabled(priv))
+		return XDP_PACKET_HEADROOM;
+
+	return 0;
+}
 
 #if IS_ENABLED(CONFIG_STMMAC_SELFTESTS)
 void stmmac_selftest_run(struct net_device *dev,
