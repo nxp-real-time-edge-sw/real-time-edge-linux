@@ -729,6 +729,13 @@ static int felix_cls_flower_add(struct dsa_switch *ds, int port,
 				struct flow_cls_offload *cls, bool ingress)
 {
 	struct ocelot *ocelot = ds->priv;
+	struct felix *felix = ocelot_to_felix(ocelot);
+
+	if (felix->info->flower_replace) {
+		if (cls->common.chain_index == OCELOT_PSFP_CHAIN)
+			return felix->info->flower_replace(ocelot, port, cls,
+							   ingress);
+	}
 
 	return ocelot_cls_flower_replace(ocelot, port, cls, ingress);
 }
@@ -737,6 +744,14 @@ static int felix_cls_flower_del(struct dsa_switch *ds, int port,
 				struct flow_cls_offload *cls, bool ingress)
 {
 	struct ocelot *ocelot = ds->priv;
+	struct felix *felix = ocelot_to_felix(ocelot);
+	int ret;
+
+	if (felix->info->flower_destroy) {
+		ret = felix->info->flower_destroy(ocelot, port, cls, ingress);
+		if (!ret)
+			return 0;
+	}
 
 	return ocelot_cls_flower_destroy(ocelot, port, cls, ingress);
 }
@@ -745,6 +760,14 @@ static int felix_cls_flower_stats(struct dsa_switch *ds, int port,
 				  struct flow_cls_offload *cls, bool ingress)
 {
 	struct ocelot *ocelot = ds->priv;
+	struct felix *felix = ocelot_to_felix(ocelot);
+	int ret;
+
+	if (felix->info->flower_stats) {
+		ret = felix->info->flower_stats(ocelot, port, cls, ingress);
+		if (!ret)
+			return 0;
+	}
 
 	return ocelot_cls_flower_stats(ocelot, port, cls, ingress);
 }
