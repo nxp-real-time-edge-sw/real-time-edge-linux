@@ -38,6 +38,12 @@ struct felix_info {
 	void	(*port_sched_speed_set)(struct ocelot *ocelot, int port,
 					int speed);
 	void	(*xmit_template_populate)(struct ocelot *ocelot, int port);
+	int	(*flower_replace)(struct ocelot *ocelot, int port,
+				  struct flow_cls_offload *f, bool ingress);
+	int	(*flower_destroy)(struct ocelot *ocelot, int port,
+				  struct flow_cls_offload *f, bool ingress);
+	int	(*flower_stats)(struct ocelot *ocelot, int port,
+				struct flow_cls_offload *f, bool ingress);
 };
 
 extern const struct dsa_switch_ops felix_switch_ops;
@@ -55,5 +61,19 @@ struct felix {
 
 struct net_device *felix_port_to_netdev(struct ocelot *ocelot, int port);
 int felix_netdev_to_port(struct net_device *dev);
+
+void vsc9959_new_base_time(struct ocelot *ocelot, ktime_t base_time,
+			   u64 cycle_time, struct timespec64 *new_base_ts);
+
+int felix_flower_stream_replace(struct ocelot *ocelot, int port,
+				struct flow_cls_offload *f, bool ingress);
+
+int felix_flower_stream_destroy(struct ocelot *ocelot, int port,
+				struct flow_cls_offload *f, bool ingress);
+
+int felix_flower_stream_stats(struct ocelot *ocelot, int port,
+			      struct flow_cls_offload *f, bool ingress);
+
+void felix_psfp_init(struct ocelot *ocelot);
 
 #endif

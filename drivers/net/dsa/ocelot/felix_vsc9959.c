@@ -935,6 +935,8 @@ static int vsc9959_reset(struct ocelot *ocelot)
 	/* enable switch core */
 	ocelot_field_write(ocelot, SYS_RESET_CFG_CORE_ENA, 1);
 
+	felix_psfp_init(ocelot);
+
 	return 0;
 }
 
@@ -1158,9 +1160,9 @@ static void vsc9959_sched_speed_set(struct ocelot *ocelot, int port,
 #endif
 }
 
-static void vsc9959_new_base_time(struct ocelot *ocelot, ktime_t base_time,
-				  u64 cycle_time,
-				  struct timespec64 *new_base_ts)
+void vsc9959_new_base_time(struct ocelot *ocelot, ktime_t base_time,
+			   u64 cycle_time,
+			   struct timespec64 *new_base_ts)
 {
 	struct timespec64 ts;
 	ktime_t new_base_time;
@@ -1379,6 +1381,9 @@ static const struct felix_info felix_info_vsc9959 = {
 	.port_setup_tc		= vsc9959_port_setup_tc,
 	.port_sched_speed_set	= vsc9959_sched_speed_set,
 	.xmit_template_populate	= vsc9959_xmit_template_populate,
+	.flower_replace		= felix_flower_stream_replace,
+	.flower_destroy		= felix_flower_stream_destroy,
+	.flower_stats		= felix_flower_stream_stats,
 };
 
 static irqreturn_t felix_irq_handler(int irq, void *data)
