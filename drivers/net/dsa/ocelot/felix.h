@@ -37,6 +37,10 @@ struct felix_info {
 				 enum tc_setup_type type, void *type_data);
 	void	(*port_sched_speed_set)(struct ocelot *ocelot, int port,
 					int speed);
+	int	(*port_set_preempt)(struct ocelot *ocelot, int port,
+				    struct ethtool_fp *fpcmd);
+	int	(*port_get_preempt)(struct ocelot *ocelot, int port,
+				    struct ethtool_fp *fpcmd);
 	void	(*xmit_template_populate)(struct ocelot *ocelot, int port);
 	int	(*flower_replace)(struct ocelot *ocelot, int port,
 				  struct flow_cls_offload *f, bool ingress);
