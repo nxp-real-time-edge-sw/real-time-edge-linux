@@ -12,12 +12,6 @@
 #define TABLE_UPDATE_SLEEP_US 10
 #define TABLE_UPDATE_TIMEOUT_US 100000
 
-struct ocelot_mact_entry {
-	u8 mac[ETH_ALEN];
-	u16 vid;
-	enum macaccess_entry_type type;
-};
-
 static inline u32 ocelot_mact_read_macaccess(struct ocelot *ocelot)
 {
 	return ocelot_read(ocelot, ANA_TABLES_MACACCESS);
@@ -742,8 +736,8 @@ nla_put_failure:
 }
 EXPORT_SYMBOL(ocelot_port_fdb_do_dump);
 
-static int ocelot_mact_read(struct ocelot *ocelot, int row, int col, int *dst,
-			    struct ocelot_mact_entry *entry)
+int ocelot_mact_read(struct ocelot *ocelot, int row, int col, int *dst,
+		     struct ocelot_mact_entry *entry)
 {
 	u32 val, macl, mach;
 	char mac[ETH_ALEN];
@@ -785,6 +779,7 @@ static int ocelot_mact_read(struct ocelot *ocelot, int row, int col, int *dst,
 
 	return 0;
 }
+EXPORT_SYMBOL(ocelot_mact_read);
 
 int ocelot_fdb_dump(struct ocelot *ocelot, int port,
 		    dsa_fdb_dump_cb_t *cb, void *data)
