@@ -20,8 +20,8 @@
 /* Default policer order */
 #define POL_ORDER 0x1d3 /* Ocelot policer order: Serial (QoS -> Port -> VCAP) */
 
-int qos_policer_conf_set(struct ocelot *ocelot, int port, u32 pol_ix,
-			 struct qos_policer_conf *conf)
+static int qos_policer_conf_set(struct ocelot *ocelot, int port, u32 pol_ix,
+				struct qos_policer_conf *conf)
 {
 	u32 cf = 0, cir_ena = 0, frm_mode = POL_MODE_LINERATE;
 	u32 cir = 0, cbs = 0, pir = 0, pbs = 0;
@@ -207,3 +207,70 @@ int ocelot_port_policer_del(struct ocelot *ocelot, int port)
 	return 0;
 }
 EXPORT_SYMBOL(ocelot_port_policer_del);
+
+int ocelot_vcap_policer_add(struct ocelot *ocelot, u32 pol_ix,
+			    struct ocelot_policer *pol)
+{
+	struct qos_policer_conf pp = { 0 };
+	struct list_head *pos, *q;
+	struct qos_policer *tmp;
+	int ret;
+
+	if (!pol)
+		return -EINVAL;
+
+	pp.mode = MSCC_QOS_RATE_MODE_DATA;
+	pp.pir = pol->rate;
+	pp.pbs = pol->burst;
+
+	list_for_each_safe(pos, q, &ocelot->policer) {
+		tmp = list_entry(pos, struct qos_policer, list);
+		if (tmp->pol_ix == pol_ix) {
+			refcount_inc(&tmp->refcount);
+			return 0;
+		}
+		if (tmp->pol_ix > pol_ix)
+			break;
+	}
+
+	ret = qos_policer_conf_set(ocelot, 0, pol_ix, &pp);
+	if (ret)
+		return ret;
+
+	tmp = kzalloc(sizeof(*tmp), GFP_KERNEL);
+	if (!tmp)
+		return -ENOMEM;
+	tmp->pol_ix = pol_ix;
+	refcount_set(&tmp->refcount, 1);
+	list_add(&tmp->list, pos->prev);
+
+	return 0;
+}
+EXPORT_SYMBOL(ocelot_vcap_policer_add);
+
+int ocelot_vcap_policer_del(struct ocelot *ocelot, u32 pol_ix)
+{
+	struct qos_policer_conf pp = {0};
+	struct list_head *pos, *q;
+	struct qos_policer *tmp;
+	u8 z = 0;
+
+	list_for_each_safe(pos, q, &ocelot->policer) {
+		tmp = list_entry(pos, struct qos_policer, list);
+		if (tmp->pol_ix == pol_ix) {
+			z = refcount_dec_and_test(&tmp->refcount);
+			if (z) {
+				list_del(pos);
+				kfree(tmp);
+			}
+		}
+	}
+
+	if (z) {
+		pp.mode = MSCC_QOS_RATE_MODE_DISABLED;
+		return qos_policer_conf_set(ocelot, 0, pol_ix, &pp);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ocelot_vcap_policer_del);

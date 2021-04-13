@@ -30,7 +30,10 @@ struct qos_policer_conf {
 	u8   ipg; /* Size of IPG when MSCC_QOS_RATE_MODE_LINE is chosen */
 };
 
-int qos_policer_conf_set(struct ocelot *ocelot, int port, u32 pol_ix,
-			 struct qos_policer_conf *conf);
+struct qos_policer {
+	struct list_head list;
+	refcount_t refcount;
+	u32 pol_ix;
+};
 
 #endif /* _MSCC_OCELOT_POLICE_H_ */

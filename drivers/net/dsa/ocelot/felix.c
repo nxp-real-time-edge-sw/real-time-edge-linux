@@ -450,6 +450,7 @@ static int felix_init_structs(struct felix *felix, int num_phys_ports)
 	ocelot->shared_queue_sz	= felix->info->shared_queue_sz;
 	ocelot->num_mact_rows	= felix->info->num_mact_rows;
 	ocelot->vcap		= felix->info->vcap;
+	ocelot->policer_base	= felix->info->policer_base;
 	ocelot->ops		= felix->info->ops;
 	ocelot->inj_prefix	= OCELOT_TAG_PREFIX_SHORT;
 	ocelot->xtr_prefix	= OCELOT_TAG_PREFIX_SHORT;
