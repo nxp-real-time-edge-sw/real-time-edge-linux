@@ -583,7 +583,6 @@ struct ocelot_ops {
 struct ocelot_vcap_block {
 	struct list_head rules;
 	int count;
-	int pol_lpr;
 };
 
 struct ocelot_port {
@@ -654,6 +653,8 @@ struct ocelot {
 	struct list_head		dummy_rules;
 	struct ocelot_vcap_block	block[3];
 	struct vcap_props		*vcap;
+	struct list_head		policer;
+	int				policer_base;
 
 	/* Workqueue to check statistics for overflow with its lock */
 	struct mutex			stats_lock;
@@ -808,6 +809,9 @@ int ocelot_get_max_mtu(struct ocelot *ocelot, int port);
 int ocelot_port_policer_add(struct ocelot *ocelot, int port,
 			    struct ocelot_policer *pol);
 int ocelot_port_policer_del(struct ocelot *ocelot, int port);
+int ocelot_vcap_policer_add(struct ocelot *ocelot, u32 pol_ix,
+			    struct ocelot_policer *pol);
+int ocelot_vcap_policer_del(struct ocelot *ocelot, u32 pol_ix);
 int ocelot_cls_flower_replace(struct ocelot *ocelot, int port,
 			      struct flow_cls_offload *f, bool ingress);
 int ocelot_cls_flower_destroy(struct ocelot *ocelot, int port,
