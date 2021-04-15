@@ -13,6 +13,9 @@
 #define QSYS_PORT_MODE_DEQUEUE_DIS                        BIT(1)
 #define QSYS_PORT_MODE_DEQUEUE_LATE                       BIT(0)
 
+#define QSYS_SWITCH_PORT_MODE_RSZ                         0x4
+#define QSYS_SWITCH_PORT_MODE_TX_PFC_ENA_M                GENMASK(8, 1)
+
 #define QSYS_STAT_CNT_CFG_TX_GREEN_CNT_MODE               BIT(5)
 #define QSYS_STAT_CNT_CFG_TX_YELLOW_CNT_MODE              BIT(4)
 #define QSYS_STAT_CNT_CFG_DROP_GREEN_CNT_MODE             BIT(3)
