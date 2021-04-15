@@ -1278,6 +1278,8 @@ static int mscc_ocelot_probe(struct platform_device *pdev)
 		}
 	}
 
+	ocelot_setup_ptp_traps(ocelot);
+
 	register_netdevice_notifier(&ocelot_netdevice_nb);
 	register_switchdev_notifier(&ocelot_switchdev_nb);
 	register_switchdev_blocking_notifier(&ocelot_switchdev_blocking_nb);
