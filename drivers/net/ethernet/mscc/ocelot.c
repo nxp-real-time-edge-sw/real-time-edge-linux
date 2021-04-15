@@ -1704,8 +1704,6 @@ void ocelot_deinit(struct ocelot *ocelot)
 {
 	cancel_delayed_work(&ocelot->stats_work);
 	destroy_workqueue(ocelot->stats_queue);
-	if (ocelot->ptp)
-		ocelot_vcap_filter_del(ocelot, &ptp_rule);
 	mutex_destroy(&ocelot->stats_lock);
 }
 EXPORT_SYMBOL(ocelot_deinit);
