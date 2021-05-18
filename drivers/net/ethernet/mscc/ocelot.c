@@ -776,8 +776,12 @@ int ocelot_fdb_dump(struct ocelot *ocelot, int port,
 			int dst, ret;
 
 			ret = ocelot_mact_read(ocelot, i, j, &dst, &entry);
-			if (ret)
+			/* If the entry is invalid, skip it. */
+			if (ret == -EINVAL)
+				continue;
+			else if (ret)
 				return ret;
+
 			if (dst != port)
 				continue;
 
