@@ -318,6 +318,8 @@ struct gro_list {
  */
 #define GRO_HASH_BUCKETS	8
 
+
+#define NAPINAMSIZ		8
 /*
  * Structure for NAPI scheduling similar to tasklet but with weighting
  */
@@ -347,6 +349,8 @@ struct napi_struct {
 	struct list_head	dev_list;
 	struct hlist_node	napi_hash_node;
 	unsigned int		napi_id;
+	struct task_struct	*thread;
+	char			name[NAPINAMSIZ];
 };
 
 enum {
@@ -357,6 +361,8 @@ enum {
 	NAPI_STATE_LISTED,	/* NAPI added to system lists */
 	NAPI_STATE_NO_BUSY_POLL,/* Do not add in napi_hash, no busy polling */
 	NAPI_STATE_IN_BUSY_POLL,/* sk_busy_loop() owns this NAPI */
+	NAPI_STATE_THREADED,	/* The poll is performed inside its own thread*/
+	NAPI_STATE_SCHED_THREADED,	/* Napi is currently scheduled in threaded mode */
 };
 
 enum {
@@ -367,6 +373,8 @@ enum {
 	NAPIF_STATE_LISTED	 = BIT(NAPI_STATE_LISTED),
 	NAPIF_STATE_NO_BUSY_POLL = BIT(NAPI_STATE_NO_BUSY_POLL),
 	NAPIF_STATE_IN_BUSY_POLL = BIT(NAPI_STATE_IN_BUSY_POLL),
+	NAPIF_STATE_THREADED	 = BIT(NAPI_STATE_THREADED),
+	NAPIF_STATE_SCHED_THREADED	= BIT(NAPI_STATE_SCHED_THREADED),
 };
 
 enum gro_result {
@@ -488,6 +496,8 @@ static inline bool napi_complete(struct napi_struct *n)
 	return napi_complete_done(n, 0);
 }
 
+int dev_set_threaded(struct net_device *dev, bool threaded);
+
 /**
  *	napi_disable - prevent NAPI from scheduling
  *	@n: NAPI context
@@ -497,20 +507,7 @@ static inline bool napi_complete(struct napi_struct *n)
  */
 void napi_disable(struct napi_struct *n);
 
-/**
- *	napi_enable - enable NAPI scheduling
- *	@n: NAPI context
- *
- * Resume NAPI from being scheduled on this context.
- * Must be paired with napi_disable.
- */
-static inline void napi_enable(struct napi_struct *n)
-{
-	BUG_ON(!test_bit(NAPI_STATE_SCHED, &n->state));
-	smp_mb__before_atomic();
-	clear_bit(NAPI_STATE_SCHED, &n->state);
-	clear_bit(NAPI_STATE_NPSVC, &n->state);
-}
+void napi_enable(struct napi_struct *n);
 
 /**
  *	napi_synchronize - wait until NAPI is not running
@@ -1835,6 +1832,8 @@ enum netdev_priv_flags {
  *
  *	@wol_enabled:	Wake-on-LAN is enabled
  *
+ *	@threaded:	napi threaded mode is enabled
+ *
  *	@net_notifier_list:	List of per-net netdev notifier block
  *				that follow this device when it is moved
  *				to another network namespace.
@@ -2152,6 +2151,7 @@ struct net_device {
 	struct lock_class_key	*qdisc_running_key;
 	bool			proto_down;
 	unsigned		wol_enabled:1;
+	unsigned		threaded:1;
 
 	struct list_head	net_notifier_list;
 
@@ -2341,6 +2341,21 @@ static inline void *netdev_priv(const struct net_device *dev)
 #define NAPI_POLL_WEIGHT 64
 
 /**
+ *	netif_napi_add_named - initialize a NAPI context
+ *	@dev:  network device
+ *	@napi: NAPI context
+ *	@poll: polling function
+ *	@weight: default weight
+ *	@name: napi instance name
+ *
+ * netif_napi_add_named() must be used to initialize a NAPI context prior to calling
+ * *any* of the other NAPI-related functions.
+ */
+void netif_napi_add_named(struct net_device *dev, struct napi_struct *napi,
+		    int (*poll)(struct napi_struct *, int), int weight,
+		    const char *name);
+
+/**
  *	netif_napi_add - initialize a NAPI context
  *	@dev:  network device
  *	@napi: NAPI context
@@ -2352,6 +2367,27 @@ static inline void *netdev_priv(const struct net_device *dev)
  */
 void netif_napi_add(struct net_device *dev, struct napi_struct *napi,
 		    int (*poll)(struct napi_struct *, int), int weight);
+
+/**
+ *	netif_tx_napi_add_named - initialize a NAPI context
+ *	@dev:  network device
+ *	@napi: NAPI context
+ *	@poll: polling function
+ *	@weight: default weight
+ *	@name: napi instance name
+ *
+ * This variant of netif_napi_add_named() should be used from drivers using NAPI
+ * to exclusively poll a TX queue.
+ * This will avoid we add it into napi_hash[], thus polluting this hash table.
+ */
+static inline void netif_tx_napi_add_named(struct net_device *dev,
+				     struct napi_struct *napi,
+				     int (*poll)(struct napi_struct *, int),
+				     int weight, const char *name)
+{
+	set_bit(NAPI_STATE_NO_BUSY_POLL, &napi->state);
+	netif_napi_add_named(dev, napi, poll, weight, name);
+}
 
 /**
  *	netif_tx_napi_add - initialize a NAPI context
@@ -2369,8 +2405,7 @@ static inline void netif_tx_napi_add(struct net_device *dev,
 				     int (*poll)(struct napi_struct *, int),
 				     int weight)
 {
-	set_bit(NAPI_STATE_NO_BUSY_POLL, &napi->state);
-	netif_napi_add(dev, napi, poll, weight);
+	netif_tx_napi_add_named(dev, napi, poll, weight, NULL);
 }
 
 /**
