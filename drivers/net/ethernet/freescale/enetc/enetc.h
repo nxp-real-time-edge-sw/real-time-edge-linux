@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: (GPL-2.0+ OR BSD-3-Clause) */
-/* Copyright 2017-2019 NXP */
+/* Copyright 2017-2021 NXP */
 
 #include <linux/timer.h>
 #include <linux/pci.h>
@@ -300,6 +300,7 @@ struct enetc_ndev_priv {
 	struct phylink *phylink;
 	int ic_mode;
 	u32 tx_ictt;
+	struct device *ptp_dev;
 };
 
 /* Messaging */
