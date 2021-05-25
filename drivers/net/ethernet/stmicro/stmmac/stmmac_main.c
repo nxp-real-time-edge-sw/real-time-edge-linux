@@ -432,6 +432,7 @@ static void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
 	struct skb_shared_hwtstamps shhwtstamp;
 	bool found = false;
 	u64 ns = 0;
+	u8 domain;
 
 	if (!priv->hwts_tx_en)
 		return;
@@ -449,6 +450,9 @@ static void stmmac_get_tx_hwtstamp(struct stmmac_priv *priv,
 	}
 
 	if (found) {
+		if (!ptp_parse_domain(skb, &domain))
+			ptp_clock_domain_tstamp(priv->device, &ns, domain);
+
 		memset(&shhwtstamp, 0, sizeof(struct skb_shared_hwtstamps));
 		shhwtstamp.hwtstamp = ns_to_ktime(ns);
 
@@ -473,6 +477,7 @@ static void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 	struct skb_shared_hwtstamps *shhwtstamp = NULL;
 	struct dma_desc *desc = p;
 	u64 ns = 0;
+	u8 domain;
 
 	if (!priv->hwts_rx_en)
 		return;
@@ -484,6 +489,11 @@ static void stmmac_get_rx_hwtstamp(struct stmmac_priv *priv, struct dma_desc *p,
 	if (stmmac_get_rx_timestamp_status(priv, p, np, priv->adv_ts)) {
 		stmmac_get_timestamp(priv, desc, priv->adv_ts, &ns);
 		netdev_dbg(priv->dev, "get valid RX hw timestamp %llu\n", ns);
+
+		skb_reset_mac_header(skb);
+		if (!ptp_parse_domain(skb, &domain))
+			ptp_clock_domain_tstamp(priv->device, &ns, domain);
+
 		shhwtstamp = skb_hwtstamps(skb);
 		memset(shhwtstamp, 0, sizeof(struct skb_shared_hwtstamps));
 		shhwtstamp->hwtstamp = ns_to_ktime(ns);
