@@ -564,6 +564,26 @@ static irqreturn_t fec_pps_interrupt(int irq, void *dev_id)
 	return IRQ_NONE;
 }
 
+static u64 fec_ptp_clock_read(const struct cyclecounter *cc)
+{
+	struct ptp_clock_info *ptp = ptp_get_pclock_info(cc);
+	struct timespec64 ts;
+
+	fec_ptp_gettime(ptp, &ts);
+
+	return timespec64_to_ns(&ts);
+}
+
+static struct ptp_vclock_cc fec_ptp_vclock_cc = {
+	.cc.read		= fec_ptp_clock_read,
+	.cc.mask		= CYCLECOUNTER_MASK(64),
+	.cc.shift		= 28,
+	.cc.mult		= (1 << 28),
+	.refresh_interval	= (HZ * 60),
+	.mult_factor		= (1 << 6),
+	.div_factor		= 15625,
+};
+
 /**
  * fec_ptp_init
  * @pdev: The FEC network adapter
@@ -595,6 +615,7 @@ void fec_ptp_init(struct platform_device *pdev, int irq_idx)
 	fep->ptp_caps.gettime64 = fec_ptp_gettime;
 	fep->ptp_caps.settime64 = fec_ptp_settime;
 	fep->ptp_caps.enable = fec_ptp_enable;
+	fep->ptp_caps.vclock_cc	= &fec_ptp_vclock_cc,
 
 	fep->cycle_speed = clk_get_rate(fep->clk_ptp);
 	if (!fep->cycle_speed) {
