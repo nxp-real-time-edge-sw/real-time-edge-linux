@@ -45,6 +45,7 @@ enum {
 #define PTP_CFG_CLK_ADJ_FREQ_NS		BIT(30)
 
 int ocelot_ptp_gettime64(struct ptp_clock_info *ptp, struct timespec64 *ts);
+u64 ocelot_ptp_clock_read(const struct cyclecounter *cc);
 int ocelot_ptp_settime64(struct ptp_clock_info *ptp,
 			 const struct timespec64 *ts);
 int ocelot_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta);
