@@ -42,6 +42,19 @@ int ocelot_ptp_gettime64(struct ptp_clock_info *ptp, struct timespec64 *ts)
 }
 EXPORT_SYMBOL(ocelot_ptp_gettime64);
 
+u64 ocelot_ptp_clock_read(const struct cyclecounter *cc)
+{
+	struct ptp_clock_info *ptp = ptp_get_pclock_info(cc);
+	struct timespec64 ts;
+	u64 ns;
+
+	ocelot_ptp_gettime64(ptp, &ts);
+	ns = ts.tv_nsec + ts.tv_sec * NSEC_PER_SEC;
+
+	return ns;
+}
+EXPORT_SYMBOL_GPL(ocelot_ptp_clock_read);
+
 int ocelot_ptp_settime64(struct ptp_clock_info *ptp,
 			 const struct timespec64 *ts)
 {

@@ -908,6 +908,16 @@ static struct vcap_props vsc9959_vcap_props[] = {
 	},
 };
 
+static struct ptp_vclock_cc felix_ptp_vclock_cc = {
+	.cc.read		= ocelot_ptp_clock_read,
+	.cc.mask		= CYCLECOUNTER_MASK(64),
+	.cc.shift		= 28,
+	.cc.mult		= (1 << 28),
+	.refresh_interval	= (HZ * 60),
+	.mult_factor		= (1 << 6),
+	.div_factor		= 15625,
+};
+
 static const struct ptp_clock_info vsc9959_ptp_caps = {
 	.owner		= THIS_MODULE,
 	.name		= "felix ptp",
@@ -923,6 +933,7 @@ static const struct ptp_clock_info vsc9959_ptp_caps = {
 	.adjfine	= ocelot_ptp_adjfine,
 	.verify		= ocelot_ptp_verify,
 	.enable		= ocelot_ptp_enable,
+	.vclock_cc	= &felix_ptp_vclock_cc,
 };
 
 #define VSC9959_INIT_TIMEOUT			50000
