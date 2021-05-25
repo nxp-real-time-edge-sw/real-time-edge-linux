@@ -5,7 +5,6 @@
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <linux/vmalloc.h>
-#include <linux/ptp_classify.h>
 #include <linux/ptp_clock_kernel.h>
 
 /* ENETC overhead: optional extension BD + 1 BD gap */
@@ -378,23 +377,6 @@ static void enetc_get_tx_tstamp(struct enetc_hw *hw, union enetc_tx_bd *txbd,
 	*tstamp = (u64)hi << 32 | tstamp_lo;
 }
 
-static int enetc_ptp_parse_domain(struct sk_buff *skb, u8 *domain)
-{
-	unsigned int ptp_class;
-	struct ptp_header *hdr;
-
-	ptp_class = ptp_classify_raw(skb);
-	if (ptp_class == PTP_CLASS_NONE)
-		return -EINVAL;
-
-	hdr = ptp_parse_header(skb, ptp_class);
-	if (!hdr)
-		return -EINVAL;
-
-	*domain = hdr->domain_number;
-	return 0;
-}
-
 static void enetc_tstamp_tx(struct enetc_ndev_priv *priv, struct sk_buff *skb,
 			    u64 tstamp)
 {
@@ -403,7 +385,7 @@ static void enetc_tstamp_tx(struct enetc_ndev_priv *priv, struct sk_buff *skb,
 	u8 domain;
 
 	if (skb_shinfo(skb)->tx_flags & SKBTX_IN_PROGRESS) {
-		if (!enetc_ptp_parse_domain(skb, &domain))
+		if (!ptp_parse_domain(skb, &domain))
 			ptp_clock_domain_tstamp(priv->ptp_dev, &ts, domain);
 
 		memset(&shhwtstamps, 0, sizeof(shhwtstamps));
@@ -594,7 +576,7 @@ static void enetc_get_rx_tstamp(struct net_device *ndev,
 
 		skb_reset_mac_header(skb);
 
-		if (!enetc_ptp_parse_domain(skb, &domain))
+		if (!ptp_parse_domain(skb, &domain))
 			ptp_clock_domain_tstamp(priv->ptp_dev, &tstamp, domain);
 
 		memset(shhwtstamps, 0, sizeof(*shhwtstamps));
