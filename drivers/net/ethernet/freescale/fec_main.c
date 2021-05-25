@@ -66,6 +66,7 @@
 #include <linux/prefetch.h>
 #include <linux/mfd/syscon.h>
 #include <linux/regmap.h>
+#include <linux/ptp_clock_kernel.h>
 #include <soc/imx/cpuidle.h>
 
 #include <asm/cacheflush.h>
@@ -1315,14 +1316,19 @@ static void fec_enet_timeout_work(struct work_struct *work)
 
 static void
 fec_enet_hwtstamp(struct fec_enet_private *fep, unsigned ts,
-	struct skb_shared_hwtstamps *hwtstamps)
+		  struct skb_shared_hwtstamps *hwtstamps,
+		  struct sk_buff *skb)
 {
 	unsigned long flags;
+	u8 domain;
 	u64 ns;
 
 	spin_lock_irqsave(&fep->tmreg_lock, flags);
 	ns = timecounter_cyc2time(&fep->tc, ts);
 	spin_unlock_irqrestore(&fep->tmreg_lock, flags);
+
+	if (!ptp_parse_domain(skb, &domain))
+		ptp_clock_domain_tstamp(&fep->pdev->dev, &ns, domain);
 
 	memset(hwtstamps, 0, sizeof(*hwtstamps));
 	hwtstamps->hwtstamp = ns_to_ktime(ns);
@@ -1400,7 +1406,8 @@ fec_enet_tx_queue(struct net_device *ndev, u16 queue_id)
 			struct skb_shared_hwtstamps shhwtstamps;
 			struct bufdesc_ex *ebdp = (struct bufdesc_ex *)bdp;
 
-			fec_enet_hwtstamp(fep, fec32_to_cpu(ebdp->ts), &shhwtstamps);
+			fec_enet_hwtstamp(fep, fec32_to_cpu(ebdp->ts),
+					  &shhwtstamps, skb);
 			skb_tstamp_tx(skb, &shhwtstamps);
 		}
 
@@ -1604,6 +1611,13 @@ fec_enet_rx_queue(struct net_device *ndev, int budget, u16 queue_id)
 		if (fep->bufdesc_ex)
 			ebdp = (struct bufdesc_ex *)bdp;
 
+		/* Get receive timestamp from the skb */
+		if (fep->hwts_rx_en && fep->bufdesc_ex) {
+			skb_reset_mac_header(skb);
+			fec_enet_hwtstamp(fep, fec32_to_cpu(ebdp->ts),
+					  skb_hwtstamps(skb), skb);
+		}
+
 		/* If this is a VLAN packet remove the VLAN Tag */
 		vlan_packet_rcvd = false;
 		if ((ndev->features & NETIF_F_HW_VLAN_CTAG_RX) &&
@@ -1621,11 +1635,6 @@ fec_enet_rx_queue(struct net_device *ndev, int budget, u16 queue_id)
 		}
 
 		skb->protocol = eth_type_trans(skb, ndev);
-
-		/* Get receive timestamp from the skb */
-		if (fep->hwts_rx_en && fep->bufdesc_ex)
-			fec_enet_hwtstamp(fep, fec32_to_cpu(ebdp->ts),
-					  skb_hwtstamps(skb));
 
 		if (fep->bufdesc_ex &&
 		    (fep->csum_flags & FLAG_RX_CSUM_ENABLED)) {
