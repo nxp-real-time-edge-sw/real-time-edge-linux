@@ -595,6 +595,8 @@ void ocelot_get_txtstamp(struct ocelot *ocelot)
 		struct timespec64 ts;
 		unsigned long flags;
 		u32 val, id, txport;
+		u8 domain;
+		u64 ns;
 
 		val = ocelot_read(ocelot, SYS_PTP_STATUS);
 
@@ -629,9 +631,14 @@ void ocelot_get_txtstamp(struct ocelot *ocelot)
 		if (unlikely(!skb_match))
 			continue;
 
+		ns = ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec;
+
+		if (!ptp_parse_domain(skb, &domain))
+			ptp_clock_domain_tstamp(ocelot->dev, &ns, domain);
+
 		/* Set the timestamp into the skb */
 		memset(&shhwtstamps, 0, sizeof(shhwtstamps));
-		shhwtstamps.hwtstamp = ktime_set(ts.tv_sec, ts.tv_nsec);
+		shhwtstamps.hwtstamp = ns_to_ktime(ns);
 		skb_complete_tx_timestamp(skb_match, &shhwtstamps);
 
 		/* Next ts */

@@ -697,6 +697,7 @@ static bool felix_rxtstamp(struct dsa_switch *ds, int port,
 	u32 tstamp_lo, tstamp_hi;
 	struct timespec64 ts;
 	u64 tstamp, val;
+	u8 domain;
 
 	ocelot_ptp_gettime64(&ocelot->ptp_info, &ts);
 	tstamp = ktime_set(ts.tv_sec, ts.tv_nsec);
@@ -709,6 +710,14 @@ static bool felix_rxtstamp(struct dsa_switch *ds, int port,
 		tstamp_hi--;
 
 	tstamp = ((u64)tstamp_hi << 32) | tstamp_lo;
+
+	__skb_push(skb, ETH_HLEN);
+	skb_reset_mac_header(skb);
+
+	if (!ptp_parse_domain(skb, &domain))
+		ptp_clock_domain_tstamp(ocelot->dev, &tstamp, domain);
+
+	__skb_pull(skb, ETH_HLEN);
 
 	shhwtstamps = skb_hwtstamps(skb);
 	memset(shhwtstamps, 0, sizeof(struct skb_shared_hwtstamps));
