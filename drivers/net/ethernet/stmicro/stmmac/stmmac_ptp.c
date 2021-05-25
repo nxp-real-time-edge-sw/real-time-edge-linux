@@ -165,6 +165,31 @@ static int stmmac_enable(struct ptp_clock_info *ptp,
 	return ret;
 }
 
+static u64 stmmac_ptp_clock_read(const struct cyclecounter *cc)
+{
+	struct ptp_clock_info *ptp = ptp_get_pclock_info(cc);
+	struct stmmac_priv *priv =
+	    container_of(ptp, struct stmmac_priv, ptp_clock_ops);
+	unsigned long flags;
+	u64 ns = 0;
+
+	spin_lock_irqsave(&priv->ptp_lock, flags);
+	stmmac_get_systime(priv, priv->ptpaddr, &ns);
+	spin_unlock_irqrestore(&priv->ptp_lock, flags);
+
+	return ns;
+}
+
+static struct ptp_vclock_cc stmmac_ptp_vclock_cc = {
+	.cc.read		= stmmac_ptp_clock_read,
+	.cc.mask		= CYCLECOUNTER_MASK(64),
+	.cc.shift		= 28,
+	.cc.mult		= (1 << 28),
+	.refresh_interval	= (HZ * 60),
+	.mult_factor		= (1 << 6),
+	.div_factor		= 15625,
+};
+
 /* structure describing a PTP hardware clock */
 static struct ptp_clock_info stmmac_ptp_clock_ops = {
 	.owner = THIS_MODULE,
@@ -180,6 +205,7 @@ static struct ptp_clock_info stmmac_ptp_clock_ops = {
 	.gettime64 = stmmac_get_time,
 	.settime64 = stmmac_set_time,
 	.enable = stmmac_enable,
+	.vclock_cc = &stmmac_ptp_vclock_cc,
 };
 
 /**
