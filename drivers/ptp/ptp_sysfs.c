@@ -151,10 +151,17 @@ static DEVICE_ATTR(pps_enable, 0220, NULL, pps_enable_store);
 
 static int unregister_vclock(struct device *dev, void *data)
 {
-	struct ptp_clock *ptp = dev_get_drvdata(dev);
-	struct ptp_clock_info *info = ptp->info;
+	struct ptp_clock_info *info;
 	struct ptp_vclock *vclock;
-	u8 *num = data;
+	struct ptp_clock *ptp;
+	u8 *num;
+
+	if (strcmp(dev->class->name, "ptp") != 0)
+		return 0;
+
+	ptp = dev_get_drvdata(dev);
+	info = ptp->info;
+	num = data;
 
 	if (info->vclock_flag) {
 		vclock = info_to_vclock(info);
@@ -225,8 +232,14 @@ static DEVICE_ATTR_RW(num_vclocks);
 
 static int check_domain_avail(struct device *dev, void *data)
 {
-	struct ptp_clock *ptp = dev_get_drvdata(dev);
-	int16_t *domain = data;
+	struct ptp_clock *ptp;
+	int16_t *domain;
+
+	if (strcmp(dev->class->name, "ptp") != 0)
+		return 0;
+
+	ptp = dev_get_drvdata(dev);
+	domain = data;
 
 	if (ptp->domain == *domain)
 		return -EINVAL;
