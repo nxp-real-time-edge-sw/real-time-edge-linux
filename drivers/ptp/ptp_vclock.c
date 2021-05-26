@@ -90,11 +90,18 @@ static void ptp_vclock_refresh(struct work_struct *work)
 
 static int ptp_convert_domain_tstamp(struct device *dev, void *data)
 {
-	struct ptp_clock *ptp = dev_get_drvdata(dev);
-	struct ptp_clock_info *info = ptp->info;
-	struct domain_tstamp *domain_ts = data;
+	struct domain_tstamp *domain_ts;
+	struct ptp_clock_info *info;
 	struct ptp_vclock *vclock;
+	struct ptp_clock *ptp;
 	unsigned long flags;
+
+	if (strcmp(dev->class->name, "ptp") != 0)
+		return 0;
+
+	ptp = dev_get_drvdata(dev);
+	info = ptp->info;
+	domain_ts = data;
 
 	/* Convert to domain tstamp if there is a domain matched */
 	if (ptp->domain == domain_ts->domain) {
