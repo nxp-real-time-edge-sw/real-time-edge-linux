@@ -3,6 +3,7 @@
  * PTP 1588 clock support - sysfs interface.
  *
  * Copyright (C) 2010 OMICRON electronics GmbH
+ * Copyright 2021 NXP
  */
 #include <linux/capability.h>
 #include <linux/slab.h>
@@ -148,6 +149,144 @@ out:
 }
 static DEVICE_ATTR(pps_enable, 0220, NULL, pps_enable_store);
 
+static int unregister_vclock(struct device *dev, void *data)
+{
+	struct ptp_clock_info *info;
+	struct ptp_vclock *vclock;
+	struct ptp_clock *ptp;
+	u8 *num;
+
+	if (strcmp(dev->class->name, "ptp") != 0)
+		return 0;
+
+	ptp = dev_get_drvdata(dev);
+	info = ptp->info;
+	num = data;
+
+	if (info->vclock_flag) {
+		vclock = info_to_vclock(info);
+		dev_info(&vclock->pclock->dev, "delete virtual clock ptp%d\n",
+			 vclock->clock->index);
+		ptp_vclock_unregister(vclock);
+		(*num)--;
+	}
+
+	/* For break. Not error. */
+	if (*num == 0)
+		return -EINVAL;
+
+	return 0;
+}
+
+static ssize_t num_vclocks_show(struct device *dev,
+				struct device_attribute *attr, char *page)
+{
+	struct ptp_clock *ptp = dev_get_drvdata(dev);
+
+	return snprintf(page, PAGE_SIZE-1, "%d\n", ptp->num_vclocks);
+}
+
+static ssize_t num_vclocks_store(struct device *dev,
+				 struct device_attribute *attr,
+				 const char *buf, size_t count)
+{
+	struct ptp_clock *ptp = dev_get_drvdata(dev);
+	struct ptp_vclock *vclock;
+	int err = -EINVAL;
+	u8 num, i;
+
+	if (kstrtou8(buf, 0, &num))
+		goto out;
+
+	/* Need to create more vclocks */
+	if (num > ptp->num_vclocks) {
+		for (i = 0; i < num - ptp->num_vclocks; i++) {
+			vclock = ptp_vclock_register(ptp);
+			if (!vclock)
+				goto out;
+
+			dev_info(dev, "new virtual clock ptp%d\n",
+				 vclock->clock->index);
+		}
+	}
+
+	/* Need to delete vclocks */
+	if (num < ptp->num_vclocks) {
+		i = ptp->num_vclocks - num;
+		device_for_each_child_reverse(dev->parent, &i,
+					      unregister_vclock);
+	}
+
+	if (num == 0)
+		dev_info(dev, "only physical clock in use now\n");
+	else
+		dev_info(dev, "guarantee physical clock free running\n");
+
+	ptp->num_vclocks = num;
+
+	return count;
+out:
+	return err;
+}
+static DEVICE_ATTR_RW(num_vclocks);
+
+static int check_domain_avail(struct device *dev, void *data)
+{
+	struct ptp_clock *ptp;
+	int16_t *domain;
+
+	if (strcmp(dev->class->name, "ptp") != 0)
+		return 0;
+
+	ptp = dev_get_drvdata(dev);
+	domain = data;
+
+	if (ptp->domain == *domain)
+		return -EINVAL;
+
+	return 0;
+}
+
+static ssize_t domain_show(struct device *dev,
+			   struct device_attribute *attr, char *page)
+{
+	struct ptp_clock *ptp = dev_get_drvdata(dev);
+
+	return snprintf(page, PAGE_SIZE-1, "%d\n", ptp->domain);
+}
+
+static ssize_t domain_store(struct device *dev,
+			    struct device_attribute *attr,
+			    const char *buf, size_t count)
+{
+	struct ptp_clock *ptp = dev_get_drvdata(dev);
+	int err = -EINVAL;
+	int16_t domain;
+
+	if (kstrtos16(buf, 0, &domain))
+		goto out;
+
+	if (domain > 255 || domain < -1)
+		goto out;
+
+	if (domain == -1) {
+		ptp->domain = -1;
+		return count;
+	}
+
+	if (device_for_each_child(dev->parent, &domain, check_domain_avail)) {
+		dev_err(dev, "the domain value already in used\n");
+		goto out;
+	}
+
+	ptp->domain = domain;
+
+	return count;
+out:
+	return err;
+}
+static DEVICE_ATTR_RW(domain);
+
 static struct attribute *ptp_attrs[] = {
 	&dev_attr_clock_name.attr,
 
@@ -162,6 +301,8 @@ static struct attribute *ptp_attrs[] = {
 	&dev_attr_fifo.attr,
 	&dev_attr_period.attr,
 	&dev_attr_pps_enable.attr,
+	&dev_attr_num_vclocks.attr,
+	&dev_attr_domain.attr,
 	NULL
 };
 
@@ -182,6 +323,12 @@ static umode_t ptp_is_attribute_visible(struct kobject *kobj,
 			mode = 0;
 	} else if (attr == &dev_attr_pps_enable.attr) {
 		if (!info->pps)
+			mode = 0;
+	} else if (attr == &dev_attr_num_vclocks.attr) {
+		if (info->vclock_flag || !info->vclock_cc)
+			mode = 0;
+	} else if (attr == &dev_attr_domain.attr) {
+		if (!info->vclock_flag)
 			mode = 0;
 	}
 

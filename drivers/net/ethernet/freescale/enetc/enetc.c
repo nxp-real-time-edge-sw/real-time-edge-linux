@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR BSD-3-Clause)
-/* Copyright 2017-2019 NXP */
+/* Copyright 2017-2021 NXP */
 
 #include "enetc.h"
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <linux/vmalloc.h>
+#include <linux/ptp_clock_kernel.h>
 
 /* ENETC overhead: optional extension BD + 1 BD gap */
 #define ENETC_TXBDS_NEEDED(val)	((val) + 2)
@@ -376,13 +377,19 @@ static void enetc_get_tx_tstamp(struct enetc_hw *hw, union enetc_tx_bd *txbd,
 	*tstamp = (u64)hi << 32 | tstamp_lo;
 }
 
-static void enetc_tstamp_tx(struct sk_buff *skb, u64 tstamp)
+static void enetc_tstamp_tx(struct enetc_ndev_priv *priv, struct sk_buff *skb,
+			    u64 tstamp)
 {
 	struct skb_shared_hwtstamps shhwtstamps;
+	u64 ts = tstamp;
+	u8 domain;
 
 	if (skb_shinfo(skb)->tx_flags & SKBTX_IN_PROGRESS) {
+		if (!ptp_parse_domain(skb, &domain))
+			ptp_clock_domain_tstamp(priv->ptp_dev, &ts, domain);
+
 		memset(&shhwtstamps, 0, sizeof(shhwtstamps));
-		shhwtstamps.hwtstamp = ns_to_ktime(tstamp);
+		shhwtstamps.hwtstamp = ns_to_ktime(ts);
 		skb_tstamp_tx(skb, &shhwtstamps);
 	}
 }
@@ -390,6 +397,7 @@ static void enetc_tstamp_tx(struct sk_buff *skb, u64 tstamp)
 static bool enetc_clean_tx_ring(struct enetc_bdr *tx_ring, int napi_budget)
 {
 	struct net_device *ndev = tx_ring->ndev;
+	struct enetc_ndev_priv *priv = netdev_priv(ndev);
 	int tx_frm_cnt = 0, tx_byte_cnt = 0, tx_win_drop = 0;
 	struct enetc_tx_swbd *tx_swbd;
 	int i, bds_to_clean;
@@ -431,7 +439,7 @@ static bool enetc_clean_tx_ring(struct enetc_bdr *tx_ring, int napi_budget)
 
 		if (is_eof) {
 			if (unlikely(do_tstamp)) {
-				enetc_tstamp_tx(tx_swbd->skb, tstamp);
+				enetc_tstamp_tx(priv, tx_swbd->skb, tstamp);
 				do_tstamp = false;
 			}
 			napi_consume_skb(tx_swbd->skb, napi_budget);
@@ -554,6 +562,7 @@ static void enetc_get_rx_tstamp(struct net_device *ndev,
 	struct enetc_hw *hw = &priv->si->hw;
 	u32 lo, hi, tstamp_lo;
 	u64 tstamp;
+	u8 domain;
 
 	if (le16_to_cpu(rxbd->r.flags) & ENETC_RXBD_FLAG_TSTMP) {
 		lo = enetc_rd_reg_hot(hw->reg + ENETC_SICTR0);
@@ -564,6 +573,12 @@ static void enetc_get_rx_tstamp(struct net_device *ndev,
 			hi -= 1;
 
 		tstamp = (u64)hi << 32 | tstamp_lo;
+
+		skb_reset_mac_header(skb);
+
+		if (!ptp_parse_domain(skb, &domain))
+			ptp_clock_domain_tstamp(priv->ptp_dev, &tstamp, domain);
+
 		memset(shhwtstamps, 0, sizeof(*shhwtstamps));
 		shhwtstamps->hwtstamp = ns_to_ktime(tstamp);
 	}
