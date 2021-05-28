@@ -231,8 +231,24 @@ static int felix_qbv_set(struct net_device *ndev,
 		       QSYS_TAG_CONFIG,
 		       port);
 
-	ocelot_write_rix(ocelot, shaper_config->maxsdu,
-			 QSYS_PORT_MAX_SDU, port);
+	if (shaper_config->maxsdu) {
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_0, port);
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_1, port);
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_2, port);
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_3, port);
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_4, port);
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_5, port);
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_6, port);
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_7, port);
+	}
 
 	if (shaper_config->gate_enabled) {
 		ocelot_write(ocelot, ts_base.tv_nsec,
@@ -294,6 +310,8 @@ static int felix_qbv_get(struct net_device *ndev, struct tsn_qbv_conf *shaper_co
 		   QSYS_TAS_PARAM_CFG_CTRL_PORT_NUM(port),
 		   QSYS_TAS_PARAM_CFG_CTRL_PORT_NUM_M,
 		   QSYS_TAS_PARAM_CFG_CTRL);
+
+	shaper_config->maxsdu = ocelot_read_rix(ocelot, QSYS_QMAXSDU_CFG_0, port);
 
 	val = ocelot_read_rix(ocelot, QSYS_TAG_CONFIG, port);
 	shaper_config->gate_enabled = (val & QSYS_TAG_CONFIG_ENABLE);
@@ -980,6 +998,7 @@ static int felix_qci_sfi_get(struct net_device *ndev, u32 index,
 	struct ocelot *ocelot;
 	struct dsa_port *dp;
 	u32 sfid = index;
+	int enable = 1;
 	int i, port;
 
 	dp = dsa_port_from_netdev(ndev);
@@ -1002,8 +1021,10 @@ static int felix_qci_sfi_get(struct net_device *ndev, u32 index,
 		     ANA_TABLES_SFIDACCESS);
 
 	val = ocelot_read(ocelot, ANA_TABLES_SFIDTIDX);
-	if (!(val & ANA_TABLES_SFIDTIDX_SGID_VALID))
-		return -EINVAL;
+	if (!(val & ANA_TABLES_SFIDTIDX_SGID_VALID)) {
+		enable = 0;
+		return enable;
+	}
 
 	sfi->stream_gate_instance_id = ANA_TABLES_SFIDTIDX_SGID_X(val);
 	fmeter_id = ANA_TABLES_SFIDTIDX_POL_IDX_X(val);
@@ -1023,12 +1044,12 @@ static int felix_qci_sfi_get(struct net_device *ndev, u32 index,
 		if ((val & ANA_PORT_SFID_CFG_SFID_VALID) &&
 		    sfid == ANA_PORT_SFID_CFG_SFID(val)) {
 			sfi->stream_handle_spec = -1;
-			return 0;
+			return enable;
 		}
 	}
 
 	sfi->stream_handle_spec = sfid;
-	return 0;
+	return enable;
 }
 
 static int felix_qci_sfi_counters_get(struct net_device *ndev, u32 index,
