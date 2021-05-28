@@ -555,7 +555,7 @@ static int felix_cb_streamid_set(struct net_device *ndev, u32 index, bool enable
 	struct stream_filter *stream;
 	u32 m_index, bucket, dst_idx;
 	unsigned char mac[ETH_ALEN];
-	int idx, sfid, ssid, port;
+	int sfid, ssid, port;
 	struct ocelot *ocelot;
 	struct dsa_port *dp;
 	u16 vid;
@@ -645,7 +645,7 @@ static int felix_cb_streamid_set(struct net_device *ndev, u32 index, bool enable
 
 	ocelot_mact_write(ocelot, dst_idx, &entry, m_index, bucket);
 
-	return stream_table_add(index, mac, vid, streamid->handle);
+	return felix_stream_table_add(index, mac, vid, streamid->handle);
 }
 
 static int felix_cb_streamid_get(struct net_device *ndev, u32 index,
