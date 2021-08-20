@@ -61,6 +61,7 @@ struct stream_filter {
 	int vid;
 	u32 index;
 	u8 handle;
+	u8 dst_idx;
 };
 
 static struct list_head streamtable;
@@ -492,7 +493,7 @@ static int felix_qbu_get(struct net_device *ndev, struct tsn_preempt_status *c)
 }
 
 static int felix_stream_table_add(u32 index, const unsigned char mac[ETH_ALEN],
-				  int vid, u8 handle)
+				  int vid, u8 dst_idx, u8 handle)
 {
 	struct stream_filter *stream, *tmp;
 	struct list_head *pos, *q;
@@ -502,6 +503,7 @@ static int felix_stream_table_add(u32 index, const unsigned char mac[ETH_ALEN],
 		if (tmp->index == index) {
 			ether_addr_copy(tmp->mac, mac);
 			tmp->vid = vid;
+			tmp->dst_idx = dst_idx;
 			tmp->handle = handle;
 			return 0;
 		}
@@ -515,6 +517,7 @@ static int felix_stream_table_add(u32 index, const unsigned char mac[ETH_ALEN],
 	stream->index = index;
 	ether_addr_copy(stream->mac, mac);
 	stream->vid = vid;
+	stream->dst_idx = dst_idx;
 	stream->handle = handle;
 	list_add(&stream->list, pos->prev);
 
@@ -547,6 +550,22 @@ static struct stream_filter *felix_stream_table_get(u32 index)
 	return NULL;
 }
 
+static int felix_streamid_force_forward_clear(struct ocelot *ocelot, u8 port)
+{
+	struct stream_filter *tmp;
+
+	if (port >= ocelot->num_phys_ports)
+		return 0;
+
+	list_for_each_entry(tmp, &streamtable, list)
+		if (tmp->dst_idx == port)
+			return 0;
+
+	ocelot_bridge_force_forward_port(ocelot, port, false);
+
+	return 0;
+}
+
 static int felix_cb_streamid_set(struct net_device *ndev, u32 index, bool enable,
 				 struct tsn_cb_streamid *streamid)
 {
@@ -577,6 +596,8 @@ static int felix_cb_streamid_set(struct net_device *ndev, u32 index, bool enable
 
 		ocelot_mact_forget(ocelot, stream->mac, stream->vid);
 		felix_stream_table_del(index);
+
+		felix_streamid_force_forward_clear(ocelot, stream->dst_idx);
 
 		return 0;
 	}
@@ -617,7 +638,8 @@ static int felix_cb_streamid_set(struct net_device *ndev, u32 index, bool enable
 
 		ocelot_mact_learn(ocelot, port, mac, vid, ENTRYTYPE_LOCKED);
 
-		return felix_stream_table_add(index, mac, vid, streamid->handle);
+		return felix_stream_table_add(index, mac, vid, port,
+					      streamid->handle);
 	}
 
 	/* The {DMAC, VLAN} pair was in the MAC table (either dynamically
@@ -644,7 +666,8 @@ static int felix_cb_streamid_set(struct net_device *ndev, u32 index, bool enable
 
 	ocelot_mact_write(ocelot, dst_idx, &entry, m_index, bucket);
 
-	return felix_stream_table_add(index, mac, vid, streamid->handle);
+	return felix_stream_table_add(index, mac, vid, dst_idx,
+				      streamid->handle);
 }
 
 static int felix_cb_streamid_get(struct net_device *ndev, u32 index,
@@ -695,37 +718,6 @@ static int felix_cb_streamid_get(struct net_device *ndev, u32 index,
 		return -EINVAL;
 
 	streamid->handle = ANA_TABLES_STREAMDATA_SFID(val);
-
-	return 0;
-}
-
-/* Modify all 802.1CB stream entries that are configured for splitting to use
- * the PGID_FRER multicast PGID. This is to avoid an issue with using a unicast
- * port PGID, where stream splitting stops working when that port goes down.
- */
-static int felix_streamid_multi_forward_set(struct ocelot *ocelot,
-					    const unsigned char mac[ETH_ALEN],
-					    int vid, u8 fwdmask)
-{
-	int ret, m_index, bucket, dst_idx;
-	struct ocelot_mact_entry entry;
-	u32 val;
-
-	ret = ocelot_mact_lookup(ocelot, mac, vid, &m_index, &bucket);
-	if (ret)
-		return ret;
-
-	/* This is done just to retrieve the @fwdport */
-	ret = ocelot_mact_read(ocelot, m_index, bucket, &dst_idx, &entry);
-	if (ret)
-		return ret;
-
-	val = ocelot_read_rix(ocelot, ANA_PGID_PGID, dst_idx);
-
-	fwdmask |= val;
-
-	ocelot_mact_write(ocelot, PGID_FRER, &entry, m_index, bucket);
-	ocelot_write_rix(ocelot, fwdmask, ANA_PGID_PGID, PGID_FRER);
 
 	return 0;
 }
@@ -1528,9 +1520,9 @@ static int felix_seq_gen_set(struct net_device *ndev, u32 index,
 	}
 
 	list_for_each_entry(tmp, &streamtable, list)
-		if (tmp->handle == index)
-			felix_streamid_multi_forward_set(ocelot, tmp->mac,
-							 tmp->vid, split_mask);
+		if (tmp->handle == index &&
+		    tmp->dst_idx < ocelot->num_phys_ports)
+			ocelot_bridge_force_forward_port(ocelot, tmp->dst_idx, true);
 
 	ocelot_write(ocelot,
 		     ANA_TABLES_SEQ_MASK_SPLIT_MASK(split_mask) |
