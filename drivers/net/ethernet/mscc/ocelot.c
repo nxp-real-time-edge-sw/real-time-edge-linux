@@ -1022,31 +1022,9 @@ int ocelot_get_ts_info(struct ocelot *ocelot, int port,
 }
 EXPORT_SYMBOL(ocelot_get_ts_info);
 
-void ocelot_bridge_stp_state_set(struct ocelot *ocelot, int port, u8 state)
+static void ocelot_bridge_fwd_apply(struct ocelot *ocelot)
 {
-	u32 port_cfg;
 	int p, i;
-
-	if (!(BIT(port) & ocelot->bridge_mask))
-		return;
-
-	port_cfg = ocelot_read_gix(ocelot, ANA_PORT_PORT_CFG, port);
-
-	switch (state) {
-	case BR_STATE_FORWARDING:
-		ocelot->bridge_fwd_mask |= BIT(port);
-		fallthrough;
-	case BR_STATE_LEARNING:
-		port_cfg |= ANA_PORT_PORT_CFG_LEARN_ENA;
-		break;
-
-	default:
-		port_cfg &= ~ANA_PORT_PORT_CFG_LEARN_ENA;
-		ocelot->bridge_fwd_mask &= ~BIT(port);
-		break;
-	}
-
-	ocelot_write_gix(ocelot, port_cfg, ANA_PORT_PORT_CFG, port);
 
 	/* Apply FWD mask. The loop is needed to add/remove the current port as
 	 * a source for the other ports.
@@ -1074,6 +1052,69 @@ void ocelot_bridge_stp_state_set(struct ocelot *ocelot, int port, u8 state)
 					 ANA_PGID_PGID, PGID_SRC + p);
 		}
 	}
+}
+
+void ocelot_bridge_force_forward_port(struct ocelot *ocelot, int port, bool en)
+{
+	struct ocelot_port *ocelot_port = ocelot->ports[port];
+	u32 mask;
+	int i;
+
+	if (!en) {
+		if (ocelot_port->force_forward) {
+			ocelot_bridge_fwd_apply(ocelot);
+			ocelot_port->force_forward = 0;
+		}
+		return;
+	}
+
+	if (ocelot_port->force_forward)
+		return;
+
+	ocelot_port->force_forward = 1;
+	for (i = 0; i < ocelot->num_phys_ports; i++) {
+		if (i == port)
+			continue;
+
+		mask = ocelot_read_rix(ocelot, ANA_PGID_PGID, PGID_SRC + i);
+		mask |= BIT(port);
+		ocelot_write_rix(ocelot, mask, ANA_PGID_PGID, PGID_SRC + i);
+	}
+}
+EXPORT_SYMBOL(ocelot_bridge_force_forward_port);
+
+void ocelot_bridge_stp_state_set(struct ocelot *ocelot, int port, u8 state)
+{
+	struct ocelot_port *ocelot_port = ocelot->ports[port];
+	u32 port_cfg;
+
+	if (!(BIT(port) & ocelot->bridge_mask))
+		return;
+
+	port_cfg = ocelot_read_gix(ocelot, ANA_PORT_PORT_CFG, port);
+
+	switch (state) {
+	case BR_STATE_FORWARDING:
+		ocelot->bridge_fwd_mask |= BIT(port);
+		fallthrough;
+	case BR_STATE_LEARNING:
+		port_cfg |= ANA_PORT_PORT_CFG_LEARN_ENA;
+		break;
+
+	default:
+		port_cfg &= ~ANA_PORT_PORT_CFG_LEARN_ENA;
+		ocelot->bridge_fwd_mask &= ~BIT(port);
+		break;
+	}
+
+	ocelot_write_gix(ocelot, port_cfg, ANA_PORT_PORT_CFG, port);
+
+	/* Do not apply FWD mask after force forward set. This keeps the port
+	 * in forwarding state.
+	 * FRER need to set the port to force_forward mode.
+	 */
+	if (!ocelot_port->force_forward)
+		ocelot_bridge_fwd_apply(ocelot);
 }
 EXPORT_SYMBOL(ocelot_bridge_stp_state_set);
 
