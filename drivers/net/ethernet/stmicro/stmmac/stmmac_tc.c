@@ -349,13 +349,15 @@ static int tc_setup_cbs(struct stmmac_priv *priv,
 	}
 
 	mode_to_use = priv->plat->tx_queues_cfg[queue].mode_to_use;
-	if (mode_to_use == MTL_QUEUE_DCB && qopt->enable) {
+	if (mode_to_use == MTL_QUEUE_DCB && qopt->enable)
+		priv->plat->tx_queues_cfg[queue].mode_to_use = MTL_QUEUE_AVB;
+
+	if (qopt->enable) {
 		ret = stmmac_dma_qmode(priv, priv->ioaddr, queue, MTL_QUEUE_AVB);
 		if (ret)
 			return ret;
 
-		priv->plat->tx_queues_cfg[queue].mode_to_use = MTL_QUEUE_AVB;
-	} else if (!qopt->enable) {
+	} else {
 		ret = stmmac_dma_qmode(priv, priv->ioaddr, queue,
 				       MTL_QUEUE_DCB);
 		if (ret)
