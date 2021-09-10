@@ -396,6 +396,8 @@ struct enetc_ndev_priv {
 
 	struct work_struct	tx_onestep_tstamp;
 	struct sk_buff_head	tx_skbs;
+
+	bool preemptable_verify;
 };
 
 /* Messaging */
@@ -440,6 +442,7 @@ int enetc_xsk_wakeup(struct net_device *dev, u32 queue, u32 flags);
 
 /* ethtool */
 void enetc_set_ethtool_ops(struct net_device *ndev);
+int enetc_preempt_reset(struct net_device *ndev, bool enable);
 
 /* control buffer descriptor ring (CBDR) */
 int enetc_setup_cbdr(struct device *dev, struct enetc_hw *hw, int bd_count,
