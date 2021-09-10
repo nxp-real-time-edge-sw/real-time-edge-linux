@@ -5,6 +5,7 @@
  * Copyright 2021 NXP
  */
 #include <linux/slab.h>
+#include <linux/ptp_classify.h>
 #include "ptp_private.h"
 
 static int ptp_vclock_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
@@ -127,6 +128,24 @@ struct ptp_clock_info *ptp_get_pclock_info(const struct cyclecounter *cc)
 	return vclock->pclock->info;
 }
 EXPORT_SYMBOL(ptp_get_pclock_info);
+
+int ptp_parse_domain(struct sk_buff *skb, u8 *domain)
+{
+	unsigned int ptp_class;
+	struct ptp_header *hdr;
+
+	ptp_class = ptp_classify_raw(skb);
+	if (ptp_class == PTP_CLASS_NONE)
+		return -EINVAL;
+
+	hdr = ptp_parse_header(skb, ptp_class);
+	if (!hdr)
+		return -EINVAL;
+
+	*domain = hdr->domain_number;
+	return 0;
+}
+EXPORT_SYMBOL(ptp_parse_domain);
 
 struct ptp_vclock *ptp_vclock_register(struct ptp_clock *pclock)
 {

@@ -13,6 +13,7 @@
 #include <linux/pps_kernel.h>
 #include <linux/ptp_clock.h>
 #include <linux/timecounter.h>
+#include <linux/skbuff.h>
 
 #define PTP_CLOCK_NAME_LEN	32
 
@@ -321,6 +322,7 @@ struct ptp_clock_info *ptp_get_pclock_info(const struct cyclecounter *cc);
  * @domain:  domain number to convert
  */
 void ptp_clock_domain_tstamp(struct device *ptp_dev, u64 *tstamp, u8 domain);
+int ptp_parse_domain(struct sk_buff *skb, u8 *domain);
 #else
 static inline struct ptp_clock *ptp_clock_register(struct ptp_clock_info *info,
 						   struct device *parent)
@@ -348,6 +350,9 @@ static inline struct ptp_clock_info *ptp_get_pclock_info(
 static inline void ptp_clock_domain_tstamp(struct device *dev, u64 *tstamp,
 					   u8 domain)
 { }
+
+static inline int ptp_parse_domain(struct sk_buff *skb, u8 *domain)
+{ return -1; }
 #endif
 
 static inline void ptp_read_system_prets(struct ptp_system_timestamp *sts)
