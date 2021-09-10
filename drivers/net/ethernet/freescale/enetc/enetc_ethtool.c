@@ -10,6 +10,8 @@
 
 #include "enetc_pf.h"
 
+static void enetc_configure_port_pmac(struct enetc_hw *hw, bool enable);
+
 static const u32 enetc_si_regs[] = {
 	ENETC_SIMR, ENETC_SIPMAR0, ENETC_SIPMAR1, ENETC_SICBDRMR,
 	ENETC_SICBDRSR,	ENETC_SICBDRBAR0, ENETC_SICBDRBAR1, ENETC_SICBDRPIR,
@@ -2099,6 +2101,34 @@ static int enetc_get_mm(struct net_device *ndev, struct ethtool_mm_state *state)
 	return 0;
 }
 
+static void enetc_configure_port_pmac(struct enetc_hw *hw, bool enable)
+{
+	u32 temp;
+
+	/* Set pMAC step lock */
+	temp = enetc_port_rd(hw, ENETC_PFPMR);
+	enetc_port_wr(hw, ENETC_PFPMR, temp | ENETC_PFPMR_PMACE);
+
+	temp = enetc_port_rd(hw, ENETC_MMCSR);
+	if (enable)
+		temp |= ENETC_MMCSR_ME;
+	else
+		temp &= (~ENETC_MMCSR_ME);
+	enetc_port_wr(hw, ENETC_MMCSR, temp);
+}
+
+int enetc_preempt_reset(struct net_device *ndev, bool enable)
+{
+	struct enetc_ndev_priv *priv = netdev_priv(ndev);
+	u32 temp;
+
+	temp = enetc_port_rd(&priv->si->hw, ENETC_PFPMR);
+	if (temp & ENETC_PFPMR_PMACE)
+		enetc_configure_port_pmac(&priv->si->hw, enable);
+
+	return 0;
+}
+
 /* ENETC does not have an IRQ to notify changes to the MAC Merge TX status
  * (active/inactive), but the preemptible traffic classes should only be
  * committed to hardware once TX is active. Resort to polling.
@@ -2163,6 +2193,104 @@ static void enetc4_get_mm_stats(struct net_device *ndev,
 	s->MACMergeHoldCount = enetc_port_rd(hw, ENETC4_MMHCR);
 }
 
+static int enetc_set_preempt(struct net_device *ndev,
+			     struct ethtool_fp *pt)
+{
+	struct enetc_ndev_priv *priv = netdev_priv(ndev);
+	u32 preempt, temp;
+	int rafs;
+	int i;
+
+	if (!pt)
+		return -EINVAL;
+
+	if (!pt->disabled && (pt->min_frag_size < 60 || pt->min_frag_size > 252))
+		return -EINVAL;
+
+	rafs = DIV_ROUND_UP((pt->min_frag_size + 4), 64) - 1;
+
+	preempt = pt->preemptible_queues_mask;
+
+	temp = enetc_rd(&priv->si->hw, ENETC_PTGCR);
+	if (temp & ENETC_PTGCR_TGE)
+		enetc_wr(&priv->si->hw, ENETC_PTGCR,
+			 temp & (~ENETC_PTGCR_TGPE));
+
+	for (i = 0; i < 8; i++) {
+		/* 1 Enabled. Traffic is transmitted on the preemptive MAC. */
+		temp = enetc_port_rd(&priv->si->hw, ENETC_PTCFPR(i));
+
+		if ((preempt >> i) & 0x1)
+			enetc_port_wr(&priv->si->hw,
+				      ENETC_PTCFPR(i),
+				      temp | ENETC_PTCFPR_FPE);
+		else
+			enetc_port_wr(&priv->si->hw,
+				      ENETC_PTCFPR(i),
+				      temp & ~ENETC_PTCFPR_FPE);
+	}
+
+	temp = enetc_port_rd(&priv->si->hw, ENETC_MMCSR);
+	temp &= ~ENETC_MMCSR_RAFS_MASK;
+	temp |= ENETC_MMCSR_RAFS(rafs);
+	if (pt->fp_enabled)
+		temp &= ~ENETC_MMCSR_VDIS;
+	else
+		temp |= ENETC_MMCSR_VDIS;
+	enetc_port_wr(&priv->si->hw, ENETC_MMCSR, temp);
+
+	if (pt->disabled || pt->fp_lldp_verify)
+		enetc_configure_port_pmac(&priv->si->hw, 0);
+	else
+		enetc_configure_port_pmac(&priv->si->hw, 1);
+
+	if (pt->disabled) {
+		temp = enetc_port_rd(&priv->si->hw, ENETC_PFPMR);
+		enetc_port_wr(&priv->si->hw, ENETC_PFPMR,
+			      temp & ~ENETC_PFPMR_PMACE);
+	}
+
+	priv->preemptable_verify = pt->fp_lldp_verify;
+
+	return 0;
+}
+
+static int enetc_get_preempt(struct net_device *ndev,
+			     struct ethtool_fp *pt)
+{
+	struct enetc_ndev_priv *priv = netdev_priv(ndev);
+	u32 temp;
+	int i;
+
+	if (!pt)
+		return -EINVAL;
+
+	if (enetc_port_rd(&priv->si->hw, ENETC_PFPMR) & ENETC_PFPMR_PMACE)
+		pt->fp_status = true;
+	else
+		pt->fp_status = false;
+
+	temp = enetc_port_rd(&priv->si->hw, ENETC_MMCSR);
+	if (!(temp & ENETC_MMCSR_VDIS) && (ENETC_MMCSR_GET_VSTS(temp) == 3))
+		pt->fp_active = true;
+	else if ((temp & ENETC_MMCSR_VDIS) && (temp & ENETC_MMCSR_ME))
+		pt->fp_active = true;
+	else
+		pt->fp_active = false;
+
+	pt->preemptible_queues_mask = 0;
+	for (i = 0; i < 8; i++)
+		if (enetc_port_rd(&priv->si->hw, ENETC_PTCFPR(i)) & 0x80000000)
+			pt->preemptible_queues_mask |= 1 << i;
+
+	pt->fp_supported = !!(priv->si->hw_features & ENETC_SI_F_QBU);
+	pt->supported_queues_mask = 0xff;
+	temp = enetc_port_rd(&priv->si->hw, ENETC_MMCSR);
+	pt->min_frag_size = (ENETC_MMCSR_GET_RAFS(temp) + 1) * 64;
+
+	return 0;
+}
+
 const struct ethtool_ops enetc_pf_ethtool_ops = {
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
 				     ETHTOOL_COALESCE_MAX_FRAMES |
@@ -2199,6 +2327,9 @@ const struct ethtool_ops enetc_pf_ethtool_ops = {
 	.get_mm = enetc_get_mm,
 	.set_mm = enetc_set_mm,
 	.get_mm_stats = enetc_get_mm_stats,
+	.set_preempt = enetc_set_preempt,
+	.get_preempt = enetc_get_preempt,
+	.reset_preempt = enetc_preempt_reset,
 };
 
 const struct ethtool_ops enetc4_ppm_ethtool_ops = {

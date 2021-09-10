@@ -566,6 +566,8 @@ struct enetc_ndev_priv {
 
 	struct ethtool_keee eee;
 	int page_order;
+
+	bool preemptable_verify;
 };
 
 #define ENETC_CBD(R, i)	(&(((struct enetc_cbd *)((R).bd_base))[i]))
@@ -634,6 +636,7 @@ extern const struct ethtool_ops enetc4_ppm_ethtool_ops;
 void enetc_set_ethtool_ops(struct net_device *ndev);
 void enetc_mm_commit_preemptible_tcs(struct enetc_ndev_priv *priv);
 void enetc_eee_mode_set(struct net_device *dev, bool enable);
+int enetc_preempt_reset(struct net_device *ndev, bool enable);
 
 /* control buffer descriptor ring (CBDR) */
 int enetc_setup_cbdr(struct enetc_si *si);
