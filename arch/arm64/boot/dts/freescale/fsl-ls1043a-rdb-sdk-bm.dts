@@ -1,0 +1,44 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * DTS file for NXP Layerscape baremetal
+ *
+ * Copyright 2018-2023 NXP
+ *
+ * Author: Changming Huang <jerry.huang@nxp.com>
+ *
+ */
+
+#include "fsl-ls1043a-rdb-sdk.dts"
+
+
+&usb0 {
+	status = "disabled";
+};
+
+&usb1 {
+	status = "disabled";
+};
+
+&usb2 {
+	status = "disabled";
+};
+
+&pcie1 {
+	status = "okay";
+};
+
+&pcie2 {
+	status = "disabled";
+};
+
+&pcie3 {
+	status = "disabled";
+};
+
+&optee {
+	status = "disabled";
+};
+
+&ifc {
+	status = "disabled";
+};
