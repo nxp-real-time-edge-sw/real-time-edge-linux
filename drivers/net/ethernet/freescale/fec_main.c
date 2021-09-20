@@ -5088,15 +5088,32 @@ static const unsigned short offset_des_active_txq[] = {
 };
 
 #ifdef CONFIG_AVB_SUPPORT
+
+static struct platform_driver fec_driver;
+
+/* Checks if the net_device is registered by the fec */
+static bool __is_fec_net_device(struct net_device *ndev)
+{
+	if (!ndev)
+		return false;
+
+	if (ndev->dev.parent->driver == &fec_driver.driver)
+		return true;
+	else
+		return false;
+}
+
 struct device *fec_enet_avb_get_device(const char *ifname)
 {
 	struct net_device *ndev;
 	struct fec_enet_private *fep;
 
-
 	ndev = dev_get_by_name(&init_net, ifname);
 	if (!ndev)
-		return NULL;
+		goto err_dev_get;
+
+	if (!__is_fec_net_device(ndev))
+		goto err_ndev;
 
 	fep = netdev_priv(ndev);
 
@@ -5104,6 +5121,11 @@ struct device *fec_enet_avb_get_device(const char *ifname)
 
 	return &fep->pdev->dev;
 
+err_ndev:
+	dev_put(ndev);
+
+err_dev_get:
+	return NULL;
 }
 EXPORT_SYMBOL(fec_enet_avb_get_device);
 
@@ -5117,6 +5139,9 @@ int fec_enet_avb_register(const char *ifname, const struct avb_ops *avb, void *d
 	ndev = dev_get_by_name(&init_net, ifname);
 	if (!ndev)
 		goto err_dev_get;
+
+	if (!__is_fec_net_device(ndev))
+		goto err_ndev;
 
 	fep = netdev_priv(ndev);
 
@@ -5145,6 +5170,7 @@ int fec_enet_avb_register(const char *ifname, const struct avb_ops *avb, void *d
 	return ifindex;
 
 err_avb:
+err_ndev:
 	dev_put(ndev);
 
 err_dev_get:
@@ -5161,6 +5187,9 @@ int fec_enet_avb_unregister(int ifindex, const struct avb_ops *avb)
 	ndev = dev_get_by_index(&init_net, ifindex);
 	if (!ndev)
 		goto err_dev_get;
+
+	if (!__is_fec_net_device(ndev))
+		goto err_ndev;
 
 	fep = netdev_priv(ndev);
 	if (fep->avb != avb)
@@ -5186,6 +5215,7 @@ int fec_enet_avb_unregister(int ifindex, const struct avb_ops *avb)
 	return 0;
 
 err_avb:
+err_ndev:
 	dev_put(ndev);
 
 err_dev_get:
@@ -5201,6 +5231,9 @@ int fec_enet_get_tx_queue_properties(int ifindex, struct tx_queue_properties *pr
 	ndev = dev_get_by_index(&init_net, ifindex);
 	if (!ndev)
 		goto err_dev_get;
+
+	if (!__is_fec_net_device(ndev))
+		goto err_ndev;
 
 	fep = netdev_priv(ndev);
 
@@ -5235,6 +5268,7 @@ int fec_enet_get_tx_queue_properties(int ifindex, struct tx_queue_properties *pr
 	return 0;
 
 err_queues:
+err_ndev:
 	dev_put(ndev);
 
 err_dev_get:
