@@ -39,7 +39,8 @@
 #include "phylib-internal.h"
 #include "phy-caps.h"
 
-#define PHY_STATE_TIME	HZ
+#define PHY_STATE_TIME		HZ
+#define PHY_STATE_TIME_MS      100
 
 #define PHY_STATE_STR(_state)			\
 	case PHY_##_state:			\
@@ -1497,7 +1498,7 @@ static unsigned int phy_get_next_update_time(struct phy_device *phydev)
 	if (phydev->drv && phydev->drv->get_next_update_time)
 		return phydev->drv->get_next_update_time(phydev);
 
-	return PHY_STATE_TIME;
+	return (PHY_STATE_TIME_MS * HZ) / 1000;
 }
 
 enum phy_state_work {
