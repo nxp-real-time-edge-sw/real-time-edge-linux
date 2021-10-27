@@ -6202,9 +6202,10 @@ static void stmmac_napi_add(struct net_device *dev)
 		}
 		if (queue < priv->plat->rx_queues_to_use &&
 		    queue < priv->plat->tx_queues_to_use) {
-			netif_napi_add(dev, &ch->rxtx_napi,
+			snprintf(name, NAPINAMSIZ, "zc-%d", queue);
+			netif_napi_add_named(dev, &ch->rxtx_napi,
 				       stmmac_napi_poll_rxtx,
-				       NAPI_POLL_WEIGHT);
+				       NAPI_POLL_WEIGHT, name);
 		}
 	}
 }
