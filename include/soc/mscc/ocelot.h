@@ -610,6 +610,7 @@ struct ocelot_port {
 	u8				*xmit_template;
 
 	bool				force_forward;
+	bool				learn_ena;
 };
 
 struct ocelot {
@@ -795,6 +796,10 @@ void ocelot_adjust_link(struct ocelot *ocelot, int port,
 int ocelot_port_vlan_filtering(struct ocelot *ocelot, int port, bool enabled);
 void ocelot_bridge_force_forward_port(struct ocelot *ocelot, int port, bool en);
 void ocelot_bridge_stp_state_set(struct ocelot *ocelot, int port, u8 state);
+int ocelot_port_pre_bridge_flags(struct ocelot *ocelot, int port,
+				 struct switchdev_brport_flags val);
+void ocelot_port_bridge_flags(struct ocelot *ocelot, int port,
+			      struct switchdev_brport_flags val);
 int ocelot_port_bridge_join(struct ocelot *ocelot, int port,
 			    struct net_device *bridge);
 int ocelot_port_bridge_leave(struct ocelot *ocelot, int port,
