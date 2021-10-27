@@ -155,7 +155,8 @@ static struct sk_buff *ocelot_xmit(struct sk_buff *skb,
 	/* Fix up the fields which are not statically determined
 	 * in the template
 	 */
-	qos_class = skb->priority;
+	qos_class = netdev_get_num_tc(netdev) ?
+		    netdev_get_prio_tc_map(netdev, skb->priority) : skb->priority;
 	packing(injection, &qos_class, 19,  17, OCELOT_TAG_LEN, PACK, 0);
 
 	/* TX timestamping was requested */
