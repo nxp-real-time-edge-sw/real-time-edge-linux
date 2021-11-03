@@ -377,8 +377,8 @@ enum {
 	TSN_PCP_ATTR_COS,
 	TSN_PCP_ATTR_DPL,
 	__TSN_PCP_ATTR_MAX,
-	TSN_PCP_ATTR_MAX = __TSN_PCP_ATTR_MAX - 1,
 };
+#define TSN_PCP_ATTR_MAX (__TSN_PCP_ATTR_MAX - 1)
 
 #define ptptime_t __u64
 
