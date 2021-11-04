@@ -260,6 +260,16 @@ static int tc_init(struct stmmac_priv *priv)
 			 priv->flow_entries_max);
 	}
 
+	priv->vlan_entries = devm_kcalloc(priv->device,
+			STMMAC_MAX_VLAN_ENTRIES,
+			sizeof(*priv->vlan_entries),
+			GFP_KERNEL);
+	if (!priv->vlan_entries)
+		return -ENOMEM;
+
+	dev_info(priv->device, "Enabled VLAN TC (entries=%d)\n",
+			STMMAC_MAX_VLAN_ENTRIES);
+
 	/* Fail silently as we can still use remaining features, e.g. CBS */
 	if (!dma_cap->frpsel)
 		return 0;
@@ -541,6 +551,25 @@ static struct stmmac_flow_entry *tc_find_flow(struct stmmac_priv *priv,
 	return NULL;
 }
 
+static struct stmmac_vlan_entry *tc_find_vlan_flow(struct stmmac_priv *priv,
+					      struct flow_cls_offload *cls,
+					      bool get_free)
+{
+	int i;
+
+	for (i = 0; i < STMMAC_MAX_VLAN_ENTRIES; i++) {
+		struct stmmac_vlan_entry *entry = &priv->vlan_entries[i];
+
+		if (entry->cookie == cls->cookie)
+			return entry;
+		if (get_free && (entry->in_use == false))
+			return entry;
+	}
+
+	return NULL;
+}
+
+
 static struct {
 	int (*fn)(struct stmmac_priv *priv, struct flow_cls_offload *cls,
 		  struct stmmac_flow_entry *entry);
@@ -611,6 +640,7 @@ static int tc_del_flow(struct stmmac_priv *priv,
 static int tc_add_vlan_flow(struct stmmac_priv *priv,
 			    struct flow_cls_offload *cls)
 {
+	struct stmmac_vlan_entry *entry = tc_find_vlan_flow(priv, cls, false);
 	struct flow_rule *rule = flow_cls_offload_flow_rule(cls);
 	struct flow_dissector *dissector = rule->match.dissector;
 	int tc = tc_classid_to_hwtc(priv->dev, cls->classid);
@@ -620,9 +650,21 @@ static int tc_add_vlan_flow(struct stmmac_priv *priv,
 	if (!dissector_uses_key(dissector, FLOW_DISSECTOR_KEY_VLAN))
 		return -EINVAL;
 
+	if (rule->action.num_entries != 0) {
+		netdev_err(priv->dev, "Invalid action %d for VLAN filter (%d entries)\n",
+				rule->action.entries[0].id, rule->action.num_entries);
+		return -EINVAL;
+	}
+
 	if (tc < 0) {
 		netdev_err(priv->dev, "Invalid traffic class\n");
 		return -EINVAL;
+	}
+
+	if (!entry) {
+		entry = tc_find_vlan_flow(priv, cls, true);
+		if (!entry)
+			return -ENOENT;
 	}
 
 	flow_rule_match_vlan(rule, &match);
@@ -639,26 +681,25 @@ static int tc_add_vlan_flow(struct stmmac_priv *priv,
 		stmmac_rx_queue_prio(priv, priv->hw, prio, tc);
 	}
 
+	entry->cookie = cls->cookie;
+	entry->queue = tc;
+	entry->in_use = true;
+
 	return 0;
 }
 
 static int tc_del_vlan_flow(struct stmmac_priv *priv,
 			    struct flow_cls_offload *cls)
 {
-	struct flow_rule *rule = flow_cls_offload_flow_rule(cls);
-	struct flow_dissector *dissector = rule->match.dissector;
-	int tc = tc_classid_to_hwtc(priv->dev, cls->classid);
+	struct stmmac_vlan_entry *entry = tc_find_vlan_flow(priv, cls, false);
 
-	/* Nothing to do here */
-	if (!dissector_uses_key(dissector, FLOW_DISSECTOR_KEY_VLAN))
-		return -EINVAL;
+	if (!entry || !entry->in_use)
+		return -ENOENT;
 
-	if (tc < 0) {
-		netdev_err(priv->dev, "Invalid traffic class\n");
-		return -EINVAL;
-	}
+	stmmac_rx_queue_prio(priv, priv->hw, 0, entry->queue);
 
-	stmmac_rx_queue_prio(priv, priv->hw, 0, tc);
+	entry->in_use = false;
+	entry->cookie = 0;
 
 	return 0;
 }
