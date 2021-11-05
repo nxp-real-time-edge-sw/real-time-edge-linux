@@ -170,6 +170,7 @@ static int felix_qbv_set(struct net_device *ndev,
 {
 	struct tsn_qbv_basic *admin_basic = &shaper_config->admin;
 	struct tsn_qbv_entry *control_list = admin_basic->control_list;
+	struct ocelot_port *ocelot_port;
 	struct timespec64 ts_base;
 	struct ocelot *ocelot;
 	struct dsa_port *dp;
@@ -204,6 +205,9 @@ static int felix_qbv_set(struct net_device *ndev,
 			admin_basic->cycle_time_extension);
 		return -EINVAL;
 	}
+
+	ocelot_port = ocelot->ports[port];
+	ocelot_port->basetime = admin_basic->base_time;
 
 	felix_get_basetime(ocelot, admin_basic->base_time,
 			   admin_basic->cycle_time, &ts_base);
