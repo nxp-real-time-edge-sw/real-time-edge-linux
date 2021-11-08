@@ -1249,9 +1249,12 @@ static void vsc9959_tas_gcl_set(struct ocelot *ocelot, const u32 gcl_ix,
 static int vsc9959_qos_port_tas_set(struct ocelot *ocelot, int port,
 				    struct tc_taprio_qopt_offload *taprio)
 {
+	struct felix *felix = ocelot_to_felix(ocelot);
 	struct timespec64 base_ts;
 	int ret, i;
 	u32 val;
+
+	mutex_lock(&felix->tas_lock);
 
 	if (!taprio->enable) {
 		ocelot_rmw_rix(ocelot,
@@ -1260,15 +1263,21 @@ static int vsc9959_qos_port_tas_set(struct ocelot *ocelot, int port,
 			       QSYS_TAG_CONFIG_INIT_GATE_STATE_M,
 			       QSYS_TAG_CONFIG, port);
 
+		mutex_unlock(&felix->tas_lock);
+
 		return 0;
 	}
 
 	if (taprio->cycle_time > NSEC_PER_SEC ||
-	    taprio->cycle_time_extension >= NSEC_PER_SEC)
-		return -EINVAL;
+	    taprio->cycle_time_extension >= NSEC_PER_SEC) {
+		ret = -EINVAL;
+		goto err;
+	}
 
-	if (taprio->num_entries > VSC9959_TAS_GCL_ENTRY_MAX)
-		return -ERANGE;
+	if (taprio->num_entries > VSC9959_TAS_GCL_ENTRY_MAX) {
+		ret = -ERANGE;
+		goto err;
+	}
 
 	ocelot_rmw(ocelot,
 		   QSYS_TAS_PARAM_CFG_CTRL_PORT_NUM(port),
@@ -1280,8 +1289,10 @@ static int vsc9959_qos_port_tas_set(struct ocelot *ocelot, int port,
 	 * config is pending, need reset the TAS module
 	 */
 	val = ocelot_read(ocelot, QSYS_PARAM_STATUS_REG_8);
-	if (val & QSYS_PARAM_STATUS_REG_8_CONFIG_PENDING)
-		return  -EBUSY;
+	if (val & QSYS_PARAM_STATUS_REG_8_CONFIG_PENDING) {
+		ret = -EBUSY;
+		goto err;
+	}
 
 	ocelot_rmw_rix(ocelot,
 		       QSYS_TAG_CONFIG_ENABLE |
@@ -1314,6 +1325,9 @@ static int vsc9959_qos_port_tas_set(struct ocelot *ocelot, int port,
 	ret = readx_poll_timeout(vsc9959_tas_read_cfg_status, ocelot, val,
 				 !(val & QSYS_TAS_PARAM_CFG_CTRL_CONFIG_CHANGE),
 				 10, 100000);
+
+err:
+	mutex_unlock(&felix->tas_lock);
 
 	return ret;
 }
@@ -1562,6 +1576,8 @@ static int felix_pci_probe(struct pci_dev *pdev,
 						felix->info->switch_pci_bar);
 	felix->imdio_base = pci_resource_start(pdev,
 					       felix->info->imdio_pci_bar);
+
+	mutex_init(&felix->tas_lock);
 
 	pci_set_master(pdev);
 

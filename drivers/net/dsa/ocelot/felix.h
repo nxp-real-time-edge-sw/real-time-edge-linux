@@ -61,6 +61,7 @@ struct felix {
 	struct lynx_pcs			**pcs;
 	resource_size_t			switch_base;
 	resource_size_t			imdio_base;
+	struct mutex			tas_lock;
 };
 
 struct net_device *felix_port_to_netdev(struct ocelot *ocelot, int port);
