@@ -579,6 +579,7 @@ struct ocelot_ops {
 	int (*netdev_to_port)(struct net_device *dev);
 	int (*reset)(struct ocelot *ocelot);
 	u16 (*wm_enc)(u16 value);
+	void (*tas_clock_adjust)(struct ocelot *ocelot);
 };
 
 struct ocelot_vcap_block {
@@ -611,6 +612,8 @@ struct ocelot_port {
 
 	bool				force_forward;
 	bool				learn_ena;
+
+	s64				basetime;
 };
 
 struct ocelot {

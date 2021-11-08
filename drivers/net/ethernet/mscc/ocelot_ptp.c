@@ -83,15 +83,20 @@ int ocelot_ptp_settime64(struct ptp_clock_info *ptp,
 	ocelot_write_rix(ocelot, val, PTP_PIN_CFG, TOD_ACC_PIN);
 
 	spin_unlock_irqrestore(&ocelot->ptp_clock_lock, flags);
+
+	if (ocelot->ops->tas_clock_adjust)
+		ocelot->ops->tas_clock_adjust(ocelot);
+
 	return 0;
 }
 EXPORT_SYMBOL(ocelot_ptp_settime64);
 
 int ocelot_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 {
+	struct ocelot *ocelot = container_of(ptp, struct ocelot,
+					     ptp_info);
+
 	if (delta > -(NSEC_PER_SEC / 2) && delta < (NSEC_PER_SEC / 2)) {
-		struct ocelot *ocelot = container_of(ptp, struct ocelot,
-						     ptp_info);
 		unsigned long flags;
 		u32 val;
 
@@ -128,6 +133,10 @@ int ocelot_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 
 		ocelot_ptp_settime64(ptp, &ts);
 	}
+
+	if (ocelot->ops->tas_clock_adjust)
+		ocelot->ops->tas_clock_adjust(ocelot);
+
 	return 0;
 }
 EXPORT_SYMBOL(ocelot_ptp_adjtime);
