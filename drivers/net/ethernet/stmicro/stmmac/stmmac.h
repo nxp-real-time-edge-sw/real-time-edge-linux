@@ -167,6 +167,14 @@ struct stmmac_flow_entry {
 	int is_l4;
 };
 
+#define STMMAC_MAX_VLAN_ENTRIES		8
+struct stmmac_vlan_entry {
+	unsigned long cookie;
+	int in_use;
+	int queue;
+};
+
+
 struct stmmac_priv {
 	/* Frequently used values are kept adjacent for cache effect */
 	u32 tx_coal_frames;
@@ -264,6 +272,7 @@ struct stmmac_priv {
 	struct stmmac_tc_entry *tc_entries;
 	unsigned int flow_entries_max;
 	struct stmmac_flow_entry *flow_entries;
+	struct stmmac_vlan_entry *vlan_entries;
 
 	/* Pulse Per Second output */
 	struct stmmac_pps_cfg pps[STMMAC_PPS_MAX];
