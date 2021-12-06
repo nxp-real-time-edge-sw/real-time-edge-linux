@@ -1411,10 +1411,7 @@ static int felix_qos_shaper_conf_set(struct ocelot *ocelot, int idx,
 
 static int felix_cbs_set(struct net_device *ndev, u8 tc, u8 bw)
 {
-	struct phylink_link_state state;
-	struct phylink_pcs *pcs;
 	struct ocelot *ocelot;
-	struct felix *felix;
 	struct dsa_port *dp;
 	int port, speed;
 
@@ -1427,11 +1424,7 @@ static int felix_cbs_set(struct net_device *ndev, u8 tc, u8 bw)
 		return -EINVAL;
 	}
 
-	felix = ocelot_to_felix(ocelot);
-	pcs = &felix->pcs[port]->pcs;
-	pcs->ops->pcs_get_state(pcs, &state);
-
-	speed = state.speed;
+	speed = ndev->phydev->speed;
 
 	felix_qos_shaper_conf_set(ocelot, port * 8 + tc, bw, speed);
 
