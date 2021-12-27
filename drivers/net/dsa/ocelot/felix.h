@@ -60,6 +60,7 @@ struct felix {
 	resource_size_t			switch_base;
 	resource_size_t			imdio_base;
 	struct mutex			tas_lock;
+	struct dsa_8021q_context	*dsa_8021q_ctx;
 	enum dsa_tag_protocol		tag_proto;
 };
 
