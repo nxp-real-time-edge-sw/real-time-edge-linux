@@ -1160,6 +1160,7 @@ ocelot_exclusive_mac_etype_filter_rules(struct ocelot *ocelot,
 
 	return true;
 }
+EXPORT_SYMBOL(ocelot_vcap_filter_add);
 
 int ocelot_vcap_filter_add(struct ocelot *ocelot,
 			   struct ocelot_vcap_filter *filter,
@@ -1248,6 +1249,7 @@ int ocelot_vcap_filter_del(struct ocelot *ocelot,
 
 	return 0;
 }
+EXPORT_SYMBOL(ocelot_vcap_filter_del);
 
 int ocelot_vcap_filter_stats_update(struct ocelot *ocelot,
 				    struct ocelot_vcap_filter *filter)
