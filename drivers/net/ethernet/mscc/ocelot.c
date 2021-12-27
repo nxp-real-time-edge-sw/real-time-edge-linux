@@ -1031,34 +1031,35 @@ int ocelot_get_ts_info(struct ocelot *ocelot, int port,
 }
 EXPORT_SYMBOL(ocelot_get_ts_info);
 
-static void ocelot_bridge_fwd_apply(struct ocelot *ocelot)
+static void ocelot_apply_bridge_fwd_mask(struct ocelot *ocelot)
 {
-	int p, i;
+	int port;
 
 	/* Apply FWD mask. The loop is needed to add/remove the current port as
 	 * a source for the other ports.
 	 */
-	for (p = 0; p < ocelot->num_phys_ports; p++) {
-		if (ocelot->bridge_fwd_mask & BIT(p)) {
-			unsigned long mask = ocelot->bridge_fwd_mask & ~BIT(p);
+	for (port = 0; port < ocelot->num_phys_ports; port++) {
+		if (ocelot->bridge_fwd_mask & BIT(port)) {
+			unsigned long mask = ocelot->bridge_fwd_mask & ~BIT(port);
+			int lag;
 
-			for (i = 0; i < ocelot->num_phys_ports; i++) {
-				unsigned long bond_mask = ocelot->lags[i];
+			for (lag = 0; lag < ocelot->num_phys_ports; lag++) {
+				unsigned long bond_mask = ocelot->lags[lag];
 
 				if (!bond_mask)
 					continue;
 
-				if (bond_mask & BIT(p)) {
+				if (bond_mask & BIT(port)) {
 					mask &= ~bond_mask;
 					break;
 				}
 			}
 
 			ocelot_write_rix(ocelot, mask,
-					 ANA_PGID_PGID, PGID_SRC + p);
+					 ANA_PGID_PGID, PGID_SRC + port);
 		} else {
 			ocelot_write_rix(ocelot, 0,
-					 ANA_PGID_PGID, PGID_SRC + p);
+					 ANA_PGID_PGID, PGID_SRC + port);
 		}
 	}
 }
@@ -1071,7 +1072,7 @@ void ocelot_bridge_force_forward_port(struct ocelot *ocelot, int port, bool en)
 
 	if (!en) {
 		if (ocelot_port->force_forward) {
-			ocelot_bridge_fwd_apply(ocelot);
+			ocelot_apply_bridge_fwd_mask(ocelot);
 			ocelot_port->force_forward = 0;
 		}
 		return;
@@ -1124,7 +1125,7 @@ void ocelot_bridge_stp_state_set(struct ocelot *ocelot, int port, u8 state)
 	 * FRER need to set the port to force_forward mode.
 	 */
 	if (!ocelot_port->force_forward)
-		ocelot_bridge_fwd_apply(ocelot);
+		ocelot_apply_bridge_fwd_mask(ocelot);
 }
 EXPORT_SYMBOL(ocelot_bridge_stp_state_set);
 
@@ -1489,6 +1490,7 @@ int ocelot_port_lag_join(struct ocelot *ocelot, int port,
 	}
 
 	ocelot_setup_lag(ocelot, lag);
+	ocelot_apply_bridge_fwd_mask(ocelot);
 	ocelot_set_aggr_pgids(ocelot);
 
 	return 0;
@@ -1522,6 +1524,7 @@ void ocelot_port_lag_leave(struct ocelot *ocelot, int port,
 	ocelot_write_gix(ocelot, port_cfg | ANA_PORT_PORT_CFG_PORTID_VAL(port),
 			 ANA_PORT_PORT_CFG, port);
 
+	ocelot_apply_bridge_fwd_mask(ocelot);
 	ocelot_set_aggr_pgids(ocelot);
 }
 EXPORT_SYMBOL(ocelot_port_lag_leave);
