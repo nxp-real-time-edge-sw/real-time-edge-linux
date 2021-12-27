@@ -630,6 +630,8 @@ struct ocelot_port {
 	u8				*xmit_template;
 	bool				is_dsa_8021q_cpu;
 
+	struct net_device		*bond;
+
 	bool				force_forward;
 	bool				learn_ena;
 
