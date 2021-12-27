@@ -91,12 +91,6 @@ struct ocelot_multicast {
 
 int ocelot_port_fdb_do_dump(const unsigned char *addr, u16 vid,
 			    bool is_static, void *data);
-int ocelot_port_lag_join(struct ocelot *ocelot, int port,
-			 struct net_device *bond,
-			 struct netdev_lag_upper_info *info);
-void ocelot_port_lag_leave(struct ocelot *ocelot, int port,
-			   struct net_device *bond);
-void ocelot_port_lag_change(struct ocelot *ocelot, int port, bool lag_tx_active);
 struct net_device *ocelot_port_to_netdev(struct ocelot *ocelot, int port);
 int ocelot_netdev_to_port(struct net_device *dev);
 
