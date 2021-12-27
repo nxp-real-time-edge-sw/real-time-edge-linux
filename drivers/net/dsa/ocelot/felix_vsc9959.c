@@ -1547,6 +1547,7 @@ static const struct felix_info felix_info_vsc9959 = {
 	.switch_pci_bar		= 4,
 	.imdio_pci_bar		= 0,
 	.policer_base		= 63,
+	.quirk_no_xtr_irq	= true,
 	.ptp_caps		= &vsc9959_ptp_caps,
 	.mdio_bus_alloc		= vsc9959_mdio_bus_alloc,
 	.mdio_bus_free		= vsc9959_mdio_bus_free,
