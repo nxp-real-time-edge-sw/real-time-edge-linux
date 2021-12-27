@@ -841,6 +841,7 @@ static int is1_entry_set(struct ocelot *ocelot, int ix,
 						   etype.value, etype.mask);
 			}
 		}
+		break;
 	}
 	default:
 		break;
