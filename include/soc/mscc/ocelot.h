@@ -626,6 +626,9 @@ struct ocelot_port {
 	struct net_device		*bond;
 	bool				lag_tx_active;
 
+	struct net_device		*bridge;
+	u8				stp_state;
+
 	bool				force_forward;
 	bool				learn_ena;
 
@@ -648,10 +651,6 @@ struct ocelot {
 	int				packet_buffer_size;
 	int				num_frame_refs;
 	int				num_mact_rows;
-
-	struct net_device		*hw_bridge_dev;
-	u16				bridge_mask;
-	u16				bridge_fwd_mask;
 
 	struct ocelot_port		**ports;
 
