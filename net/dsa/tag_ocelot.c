@@ -2,7 +2,6 @@
 /* Copyright 2019 NXP Semiconductors
  */
 #include <soc/mscc/ocelot.h>
-#include <linux/dsa/ocelot.h>
 #include <linux/packing.h>
 #include "dsa_priv.h"
 
@@ -185,7 +184,6 @@ static struct sk_buff *ocelot_rcv(struct sk_buff *skb,
 	struct dsa_port *dp;
 	u8 *extraction;
 	u16 vlan_tpid;
-	u64 rew_val;
 
 	/* Revert skb->data by the amount consumed by the DSA master,
 	 * so it points to the beginning of the frame.
@@ -215,7 +213,6 @@ static struct sk_buff *ocelot_rcv(struct sk_buff *skb,
 	packing(extraction, &qos_class, 19, 17, OCELOT_TAG_LEN, UNPACK, 0);
 	packing(extraction, &tag_type,  16, 16, OCELOT_TAG_LEN, UNPACK, 0);
 	packing(extraction, &vlan_tci,  15,  0, OCELOT_TAG_LEN, UNPACK, 0);
-	packing(extraction, &rew_val,  116, 85, OCELOT_TAG_LEN, UNPACK, 0);
 
 	skb->dev = dsa_master_find_slave(netdev, 0, src_port);
 	if (!skb->dev)
@@ -229,7 +226,6 @@ static struct sk_buff *ocelot_rcv(struct sk_buff *skb,
 
 	skb->offload_fwd_mark = 1;
 	skb->priority = qos_class;
-	OCELOT_SKB_CB(skb)->tstamp_lo = rew_val;
 
 	/* Ocelot switches copy frames unmodified to the CPU. However, it is
 	 * possible for the user to request a VLAN modification through
