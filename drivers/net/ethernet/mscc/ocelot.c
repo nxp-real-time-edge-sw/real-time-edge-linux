@@ -215,16 +215,16 @@ static int ocelot_port_set_native_vlan(struct ocelot *ocelot, int port,
 	u32 tag_tpid = 0;
 	u32 val = 0;
 
-	if (ocelot_port->native_vlan.vid != native_vlan.vid) {
-		/* Always permit deleting the native VLAN (vid = 0) */
-		if (ocelot_port->native_vlan.vid && native_vlan.vid) {
-			dev_err(ocelot->dev,
-				"Port already has a native VLAN: %d\n",
-				ocelot_port->native_vlan.vid);
-			return -EBUSY;
-		}
-		ocelot_port->native_vlan = native_vlan;
+	/* Deny changing the native VLAN, but always permit deleting it */
+	if (ocelot_port->native_vlan.vid != native_vlan.vid &&
+	    ocelot_port->native_vlan.valid && native_vlan.valid) {
+		dev_err(ocelot->dev,
+			"Port already has a native VLAN: %d\n",
+			ocelot_port->native_vlan.vid);
+		return -EBUSY;
 	}
+
+	ocelot_port->native_vlan = native_vlan;
 
 	if (ocelot->qinq_enable && ocelot_port->qinq_mode)
 		port_tpid = REW_PORT_VLAN_CFG_PORT_TPID(ETH_P_8021AD);
@@ -237,7 +237,7 @@ static int ocelot_port_set_native_vlan(struct ocelot *ocelot, int port,
 		       REW_PORT_VLAN_CFG_PORT_TPID_M,
 		       REW_PORT_VLAN_CFG, port);
 
-	if (ocelot_port->vlan_aware && !ocelot_port->native_vlan.vid)
+	if (ocelot_port->vlan_aware && !ocelot_port->native_vlan.valid)
 		/* If port is vlan-aware and tagged, drop untagged and priority
 		 * tagged frames.
 		 */
@@ -251,7 +251,7 @@ static int ocelot_port_set_native_vlan(struct ocelot *ocelot, int port,
 		       ANA_PORT_DROP_CFG, port);
 
 	if (ocelot_port->vlan_aware) {
-		if (ocelot_port->native_vlan.vid)
+		if (native_vlan.valid)
 			/* Tag all frames except when VID == DEFAULT_VLAN */
 			val = REW_TAG_CFG_TAG_CFG(1);
 		else
@@ -357,6 +357,7 @@ int ocelot_vlan_add(struct ocelot *ocelot, int port, u16 vid, bool pvid,
 		struct ocelot_vlan pvid_vlan;
 
 		pvid_vlan.vid = vid;
+		pvid_vlan.valid = true;
 		ocelot_port_set_pvid(ocelot, port, pvid_vlan);
 	}
 
@@ -365,6 +366,7 @@ int ocelot_vlan_add(struct ocelot *ocelot, int port, u16 vid, bool pvid,
 		struct ocelot_vlan native_vlan;
 
 		native_vlan.vid = vid;
+		native_vlan.valid = true;
 		ret = ocelot_port_set_native_vlan(ocelot, port, native_vlan);
 		if (ret)
 			return ret;
@@ -387,9 +389,8 @@ int ocelot_vlan_del(struct ocelot *ocelot, int port, u16 vid)
 
 	/* Egress */
 	if (ocelot_port->native_vlan.vid == vid) {
-		struct ocelot_vlan native_vlan;
+		struct ocelot_vlan native_vlan = {0};
 
-		native_vlan.vid = 0;
 		ocelot_port_set_native_vlan(ocelot, port, native_vlan);
 	}
 
