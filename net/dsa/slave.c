@@ -599,7 +599,7 @@ static netdev_tx_t dsa_slave_xmit(struct sk_buff *skb, struct net_device *dev)
 	s->tx_bytes += skb->len;
 	u64_stats_update_end(&s->syncp);
 
-	DSA_SKB_CB(skb)->clone = NULL;
+	memset(skb->cb, 0, sizeof(skb->cb));
 
 	/* Handle tx timestamp if any */
 	dsa_skb_tx_timestamp(p, skb);

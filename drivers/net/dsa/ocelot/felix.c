@@ -1573,7 +1573,7 @@ static void felix_txtstamp(struct dsa_switch *ds, int port,
 			return;
 
 		ocelot_port_add_txtstamp_skb(ocelot, port, clone);
-		DSA_SKB_CB(skb)->clone = clone;
+		OCELOT_SKB_CB(skb)->clone = clone;
 	}
 }
 
