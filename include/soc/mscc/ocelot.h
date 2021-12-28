@@ -746,6 +746,7 @@ void ocelot_mact_write(struct ocelot *ocelot, int port,
 
 struct ocelot_skb_cb {
 	struct sk_buff *clone;
+	unsigned int ptp_class; /* valid only for clones */
 	u8 ptp_cmd;
 	u8 ts_id;
 };
