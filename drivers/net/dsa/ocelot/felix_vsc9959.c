@@ -1271,8 +1271,17 @@ static int vsc9959_qos_port_tas_set(struct ocelot *ocelot, int port,
 		goto err;
 	}
 
-	ocelot_rmw(ocelot,
-		   QSYS_TAS_PARAM_CFG_CTRL_PORT_NUM(port),
+	/* Enable guard band. The switch will schedule frames without taking
+	 * their length into account. Thus we'll always need to enable the
+	 * guard band which reserves the time of a maximum sized frame at the
+	 * end of the time window.
+	 *
+	 * Although the ALWAYS_GUARD_BAND_SCH_Q bit is global for all ports, we
+	 * need to set PORT_NUM, because subsequent writes to PARAM_CFG_REG_n
+	 * operate on the port number.
+ 	 */
+	ocelot_rmw(ocelot, QSYS_TAS_PARAM_CFG_CTRL_PORT_NUM(port) |
+		   QSYS_TAS_PARAM_CFG_CTRL_ALWAYS_GUARD_BAND_SCH_Q,
 		   QSYS_TAS_PARAM_CFG_CTRL_PORT_NUM_M |
 		   QSYS_TAS_PARAM_CFG_CTRL_ALWAYS_GUARD_BAND_SCH_Q,
 		   QSYS_TAS_PARAM_CFG_CTRL);
