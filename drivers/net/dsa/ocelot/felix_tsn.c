@@ -94,7 +94,7 @@ static const struct felix_switch_capa capa = {
 	.frer_his_len_min = 1,
 	.frer_his_len_max = 32,
 	.qos_dscp_max	= 63,
-	.qos_cos_max	= FELIX_NUM_TC - 1,
+	.qos_cos_max	= OCELOT_NUM_TC - 1,
 	.qos_dp_max	= 1,
 };
 
@@ -792,7 +792,7 @@ static int felix_qci_sfi_set(struct net_device *ndev, u32 index, bool enable,
 		val = ANA_PORT_SFID_CFG_SFID_VALID |
 			ANA_PORT_SFID_CFG_SFID(sfid);
 		if (igr_prio < 0) {
-			for (i = 0; i < FELIX_NUM_TC; i++)
+			for (i = 0; i < OCELOT_NUM_TC; i++)
 				ocelot_write_ix(ocelot, val, ANA_PORT_SFID_CFG,
 						port, i);
 		} else {
@@ -881,7 +881,7 @@ static int felix_qci_sfi_get(struct net_device *ndev, u32 index,
 	else
 		dev_err(ocelot->dev, "priority not enable\n");
 
-	for (i = 0; i < FELIX_NUM_TC; i++) {
+	for (i = 0; i < OCELOT_NUM_TC; i++) {
 		val = ocelot_read_ix(ocelot, ANA_PORT_SFID_CFG, port, i);
 		if ((val & ANA_PORT_SFID_CFG_SFID_VALID) &&
 		    sfid == ANA_PORT_SFID_CFG_SFID(val)) {
@@ -1443,7 +1443,7 @@ void felix_cbs_reset(struct ocelot *ocelot, int port, int speed)
 {
 	int i, idx;
 
-	for (i = 0; i < FELIX_NUM_TC; i++) {
+	for (i = 0; i < OCELOT_NUM_TC; i++) {
 		idx = port * 8 + i;
 		if (hsch_bw[idx] > 0)
 			felix_qos_shaper_conf_set(ocelot, idx, hsch_bw[idx],
