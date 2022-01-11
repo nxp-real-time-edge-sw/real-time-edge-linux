@@ -240,8 +240,24 @@ static int felix_qbv_set(struct net_device *ndev,
 		       QSYS_TAG_CONFIG,
 		       port);
 
-	ocelot_write_rix(ocelot, shaper_config->maxsdu,
-			 QSYS_PORT_MAX_SDU, port);
+	if (shaper_config->maxsdu) {
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_0, port);
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_1, port);
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_2, port);
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_3, port);
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_4, port);
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_5, port);
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_6, port);
+		ocelot_write_rix(ocelot, shaper_config->maxsdu,
+				 QSYS_QMAXSDU_CFG_7, port);
+	}
 
 	if (shaper_config->gate_enabled) {
 		ocelot_write(ocelot, ts_base.tv_nsec,
@@ -306,6 +322,8 @@ static int felix_qbv_get(struct net_device *ndev, struct tsn_qbv_conf *shaper_co
 		   QSYS_TAS_PARAM_CFG_CTRL_PORT_NUM(port),
 		   QSYS_TAS_PARAM_CFG_CTRL_PORT_NUM_M,
 		   QSYS_TAS_PARAM_CFG_CTRL);
+
+	shaper_config->maxsdu = ocelot_read_rix(ocelot, QSYS_QMAXSDU_CFG_0, port);
 
 	val = ocelot_read_rix(ocelot, QSYS_TAG_CONFIG, port);
 	shaper_config->gate_enabled = (val & QSYS_TAG_CONFIG_ENABLE);
