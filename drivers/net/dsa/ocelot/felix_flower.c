@@ -197,51 +197,36 @@ static int felix_hw_sfi_set(struct ocelot *ocelot,
 				  10, 100000);
 }
 
-static u32 felix_mact_status(struct ocelot *ocelot)
-{
-	return ocelot_read(ocelot, ANA_TABLES_MACACCESS);
-}
-
 static int felix_mact_stream_update(struct ocelot *ocelot,
 				    struct felix_streamid *stream,
 				    struct netlink_ext_ack *extack)
 {
-	u32 row, col, reg, val;
-	u8 type;
-	int ret;
+	enum macaccess_entry_type type;
+	int ret, sfid, ssid;
+	u32 dst_idx;
 
 	/* Stream identification desn't support to add a stream with non
 	 * existent MAC (The MAC entry has not been learned in MAC table).
 	 * return -EOPNOTSUPP to continue offloading to other modules.
 	 */
-	ret = ocelot_mact_lookup(ocelot, stream->dmac, stream->vid, &row, &col);
+	ret = ocelot_mact_lookup(ocelot, &dst_idx, stream->dmac,
+				 stream->vid, &type);
 	if (ret) {
 		if (extack)
 			NL_SET_ERR_MSG_MOD(extack, "Stream is not learned in MAC table");
 		return -EOPNOTSUPP;
 	}
 
-	ocelot_rmw(ocelot,
-		   (stream->sfid_valid ? ANA_TABLES_STREAMDATA_SFID_VALID : 0) |
-		   ANA_TABLES_STREAMDATA_SFID(stream->sfid),
-		   ANA_TABLES_STREAMDATA_SFID_VALID |
-		   ANA_TABLES_STREAMDATA_SFID_M,
-		   ANA_TABLES_STREAMDATA);
+	if (stream->sfid_valid && type == ENTRYTYPE_NORMAL)
+		type = ENTRYTYPE_LOCKED;
 
-	reg = ocelot_read(ocelot, ANA_TABLES_STREAMDATA);
-	reg &= (ANA_TABLES_STREAMDATA_SFID_VALID | ANA_TABLES_STREAMDATA_SSID_VALID);
-	type = (reg ? ENTRYTYPE_LOCKED : ENTRYTYPE_NORMAL);
-	ocelot_rmw(ocelot,  ANA_TABLES_MACACCESS_VALID |
-		   ANA_TABLES_MACACCESS_ENTRYTYPE(type) |
-		   ANA_TABLES_MACACCESS_MAC_TABLE_CMD(MACACCESS_CMD_WRITE),
-		   ANA_TABLES_MACACCESS_VALID |
-		   ANA_TABLES_MACACCESS_ENTRYTYPE_M |
-		   ANA_TABLES_MACACCESS_MAC_TABLE_CMD_M,
-		   ANA_TABLES_MACACCESS);
+	sfid = stream->sfid_valid ? stream->sfid : -1;
+	ssid = -1;
 
-	return readx_poll_timeout(felix_mact_status, ocelot, val,
-				  (!ANA_TABLES_MACACCESS_MAC_TABLE_CMD(val)),
-				  10, 100000);
+	ret = ocelot_mact_learn_streamdata(ocelot, dst_idx, stream->dmac,
+					   stream->vid, type, sfid, ssid);
+
+	return ret;
 }
 
 static void felix_stream_counters_get(struct ocelot *ocelot, u32 index,
