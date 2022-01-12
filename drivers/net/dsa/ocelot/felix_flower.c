@@ -562,7 +562,7 @@ int felix_flower_stream_replace(struct ocelot *ocelot, int port,
 	flow_action_for_each(i, a, &f->rule->action) {
 		switch (a->id) {
 		case FLOW_ACTION_GATE:
-			if (f->common.chain_index != OCELOT_PSFP_CHAIN) {
+			if (f->common.chain_index != 30000) {
 				NL_SET_ERR_MSG_MOD(extack,
 						   "Gate action only be offloaded to PSFP chain");
 				return -EOPNOTSUPP;
@@ -583,7 +583,7 @@ int felix_flower_stream_replace(struct ocelot *ocelot, int port,
 			kfree(sgi);
 			break;
 		case FLOW_ACTION_POLICE:
-			if (f->common.chain_index != OCELOT_PSFP_CHAIN) {
+			if (f->common.chain_index != 30000) {
 				NL_SET_ERR_MSG_MOD(extack,
 						   "Police action only be offloaded to PSFP chain");
 				return -EOPNOTSUPP;

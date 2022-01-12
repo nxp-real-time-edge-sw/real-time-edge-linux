@@ -11,14 +11,18 @@
 /* Arbitrarily chosen constants for encoding the VCAP block and lookup number
  * into the chain number. This is UAPI.
  */
+#define VCAP_BLOCK			10000
 #define VCAP_LOOKUP			1000
 #define VCAP_IS1_NUM_LOOKUPS		3
 #define VCAP_IS2_NUM_LOOKUPS		2
 #define VCAP_IS2_NUM_PAG		256
 #define VCAP_IS1_CHAIN(lookup)		\
-	(OCELOT_INGRESS_IS1 * OCELOT_HW_BLOCK + (lookup) * VCAP_LOOKUP)
+	(1 * VCAP_BLOCK + (lookup) * VCAP_LOOKUP)
 #define VCAP_IS2_CHAIN(lookup, pag)	\
-	(OCELOT_INGRESS_IS2 * OCELOT_HW_BLOCK + (lookup) * VCAP_LOOKUP + (pag))
+	(2 * VCAP_BLOCK + (lookup) * VCAP_LOOKUP + (pag))
+/* PSFP chain and block ID */
+#define PSFP_BLOCK_ID			OCELOT_NUM_VCAP_BLOCKS
+#define OCELOT_PSFP_CHAIN		(3 * VCAP_BLOCK)
 
 static int ocelot_chain_to_block(int chain, bool ingress)
 {
@@ -44,6 +48,9 @@ static int ocelot_chain_to_block(int chain, bool ingress)
 		for (pag = 0; pag < VCAP_IS2_NUM_PAG; pag++)
 			if (chain == VCAP_IS2_CHAIN(lookup, pag))
 				return VCAP_IS2;
+
+	if (chain == OCELOT_PSFP_CHAIN)
+		return PSFP_BLOCK_ID;
 
 	return -EOPNOTSUPP;
 }
@@ -415,7 +422,7 @@ static int ocelot_flower_parse_action(struct ocelot *ocelot, int port,
 
 	if (filter->goto_target == -1) {
 		if ((filter->block_id == VCAP_IS2 && filter->lookup == 1) ||
-		    chain == 0) {
+		    chain == 0 || filter->block_id == PSFP_BLOCK_ID) {
 			allow_missing_goto_target = true;
 		} else {
 			NL_SET_ERR_MSG_MOD(extack, "Missing GOTO action");
