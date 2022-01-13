@@ -564,6 +564,14 @@ struct ocelot_ops {
 			      struct flow_stats *stats);
 };
 
+struct ocelot_vcap_policer {
+	struct list_head pol_list;
+	u16 base;
+	u16 max;
+	u16 base2;
+	u16 max2;
+};
+
 struct ocelot_vcap_block {
 	struct list_head rules;
 	int count;
@@ -679,9 +687,8 @@ struct ocelot {
 
 	struct list_head		dummy_rules;
 	struct ocelot_vcap_block	block[3];
+	struct ocelot_vcap_policer	vcap_pol;
 	struct vcap_props		*vcap;
-	struct list_head		policer;
-	int				policer_base;
 
 	/* Workqueue to check statistics for overflow with its lock */
 	struct mutex			stats_lock;

@@ -2441,7 +2441,7 @@ int ocelot_init(struct ocelot *ocelot)
 	}
 
 	INIT_LIST_HEAD(&ocelot->multicast);
-	INIT_LIST_HEAD(&ocelot->policer);
+	INIT_LIST_HEAD(&ocelot->vcap_pol.pol_list);
 	INIT_LIST_HEAD(&ocelot->pgids);
 	INIT_LIST_HEAD(&ocelot->vlans);
 	ocelot_detect_features(ocelot);

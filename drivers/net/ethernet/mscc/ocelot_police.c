@@ -223,7 +223,7 @@ int ocelot_vcap_policer_add(struct ocelot *ocelot, u32 pol_ix,
 	pp.pir = pol->rate;
 	pp.pbs = pol->burst;
 
-	list_for_each_safe(pos, q, &ocelot->policer) {
+	list_for_each_safe(pos, q, &ocelot->vcap_pol.pol_list) {
 		tmp = list_entry(pos, struct qos_policer, list);
 		if (tmp->pol_ix == pol_ix) {
 			refcount_inc(&tmp->refcount);
@@ -255,7 +255,7 @@ int ocelot_vcap_policer_del(struct ocelot *ocelot, u32 pol_ix)
 	struct qos_policer *tmp;
 	u8 z = 0;
 
-	list_for_each_safe(pos, q, &ocelot->policer) {
+	list_for_each_safe(pos, q, &ocelot->vcap_pol.pol_list) {
 		tmp = list_entry(pos, struct qos_policer, list);
 		if (tmp->pol_ix == pol_ix) {
 			z = refcount_dec_and_test(&tmp->refcount);

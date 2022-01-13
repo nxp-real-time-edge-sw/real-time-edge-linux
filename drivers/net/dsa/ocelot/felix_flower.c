@@ -589,7 +589,7 @@ int felix_flower_stream_replace(struct ocelot *ocelot, int port,
 				return -EOPNOTSUPP;
 			}
 
-			index = a->police.index + ocelot->policer_base;
+			index = a->police.index + ocelot->vcap_pol.base;
 			if (index > FELIX_POLICER_PSFP_MAX)
 				return -EINVAL;
 
