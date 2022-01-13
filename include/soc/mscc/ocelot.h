@@ -558,7 +558,8 @@ struct ocelot_ops {
 	void (*wm_stat)(u32 val, u32 *inuse, u32 *maxuse);
 	void (*tas_clock_adjust)(struct ocelot *ocelot);
 	void (*psfp_init)(struct ocelot *ocelot);
-	int (*psfp_filter_add)(struct ocelot *ocelot, struct flow_cls_offload *f);
+	int (*psfp_filter_add)(struct ocelot *ocelot, int port,
+			       struct flow_cls_offload *f);
 	int (*psfp_filter_del)(struct ocelot *ocelot, struct flow_cls_offload *f);
 	int (*psfp_stats_get)(struct ocelot *ocelot, struct flow_cls_offload *f,
 			      struct flow_stats *stats);
@@ -598,6 +599,12 @@ enum ocelot_port_tag_config {
 	OCELOT_PORT_TAG_TRUNK_NO_VID0 = 2,
 	/* all VLANs are egress-tagged */
 	OCELOT_PORT_TAG_TRUNK = 3,
+};
+
+struct ocelot_psfp_list {
+	struct list_head stream_list;
+	struct list_head sfi_list;
+	struct list_head sgi_list;
 };
 
 enum ocelot_sb {
@@ -689,6 +696,8 @@ struct ocelot {
 	struct ocelot_vcap_block	block[3];
 	struct ocelot_vcap_policer	vcap_pol;
 	struct vcap_props		*vcap;
+
+	struct ocelot_psfp_list		psfp;
 
 	/* Workqueue to check statistics for overflow with its lock */
 	struct mutex			stats_lock;
