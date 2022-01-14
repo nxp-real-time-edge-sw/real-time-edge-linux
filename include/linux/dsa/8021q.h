@@ -52,6 +52,9 @@ int dsa_8021q_crosschip_bridge_leave(struct dsa_8021q_context *ctx, int port,
 struct sk_buff *dsa_8021q_xmit(struct sk_buff *skb, struct net_device *netdev,
 			       u16 tpid, u16 tci);
 
+void dsa_8021q_rcv(struct sk_buff *skb, int *source_port, int *switch_id,
+		   int *subvlan);
+
 u16 dsa_8021q_tx_vid(struct dsa_switch *ds, int port);
 
 u16 dsa_8021q_rx_vid(struct dsa_switch *ds, int port);
@@ -63,6 +66,10 @@ int dsa_8021q_rx_switch_id(u16 vid);
 int dsa_8021q_rx_source_port(u16 vid);
 
 u16 dsa_8021q_rx_subvlan(u16 vid);
+
+bool vid_is_dsa_8021q_rxvlan(u16 vid);
+
+bool vid_is_dsa_8021q_txvlan(u16 vid);
 
 bool vid_is_dsa_8021q(u16 vid);
 
@@ -121,6 +128,16 @@ int dsa_8021q_rx_source_port(u16 vid)
 u16 dsa_8021q_rx_subvlan(u16 vid)
 {
 	return 0;
+}
+
+bool vid_is_dsa_8021q_rxvlan(u16 vid)
+{
+	return false;
+}
+
+bool vid_is_dsa_8021q_txvlan(u16 vid)
+{
+	return false;
 }
 
 bool vid_is_dsa_8021q(u16 vid)
