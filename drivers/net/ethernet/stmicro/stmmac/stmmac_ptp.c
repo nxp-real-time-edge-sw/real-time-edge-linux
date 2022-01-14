@@ -38,9 +38,9 @@ static int stmmac_adjust_freq(struct ptp_clock_info *ptp, s32 ppb)
 	diff = div_u64(adj, 1000000000ULL);
 	addend = neg_adj ? (addend - diff) : (addend + diff);
 
-	spin_lock_irqsave(&priv->ptp_lock, flags);
+	write_lock_irqsave(&priv->ptp_lock, flags);
 	stmmac_config_addend(priv, priv->ptpaddr, addend);
-	spin_unlock_irqrestore(&priv->ptp_lock, flags);
+	write_unlock_irqrestore(&priv->ptp_lock, flags);
 
 	return 0;
 }
@@ -85,9 +85,9 @@ static int stmmac_adjust_time(struct ptp_clock_info *ptp, s64 delta)
 		mutex_unlock(&priv->plat->est->lock);
 	}
 
-	spin_lock_irqsave(&priv->ptp_lock, flags);
+	write_lock_irqsave(&priv->ptp_lock, flags);
 	stmmac_adjust_systime(priv, priv->ptpaddr, sec, nsec, neg_adj, xmac);
-	spin_unlock_irqrestore(&priv->ptp_lock, flags);
+	write_unlock_irqrestore(&priv->ptp_lock, flags);
 
 	/* Caculate new basetime and re-configured EST after PTP time adjust. */
 	if (est_rst) {
@@ -136,9 +136,9 @@ static int stmmac_get_time(struct ptp_clock_info *ptp, struct timespec64 *ts)
 	unsigned long flags;
 	u64 ns = 0;
 
-	spin_lock_irqsave(&priv->ptp_lock, flags);
+	read_lock_irqsave(&priv->ptp_lock, flags);
 	stmmac_get_systime(priv, priv->ptpaddr, &ns);
-	spin_unlock_irqrestore(&priv->ptp_lock, flags);
+	read_unlock_irqrestore(&priv->ptp_lock, flags);
 
 	*ts = ns_to_timespec64(ns);
 
@@ -161,9 +161,9 @@ static int stmmac_set_time(struct ptp_clock_info *ptp,
 	    container_of(ptp, struct stmmac_priv, ptp_clock_ops);
 	unsigned long flags;
 
-	spin_lock_irqsave(&priv->ptp_lock, flags);
+	write_lock_irqsave(&priv->ptp_lock, flags);
 	stmmac_init_systime(priv, priv->ptpaddr, ts->tv_sec, ts->tv_nsec);
-	spin_unlock_irqrestore(&priv->ptp_lock, flags);
+	write_unlock_irqrestore(&priv->ptp_lock, flags);
 
 	return 0;
 }
@@ -190,12 +190,12 @@ static int stmmac_enable(struct ptp_clock_info *ptp,
 		cfg->period.tv_sec = rq->perout.period.sec;
 		cfg->period.tv_nsec = rq->perout.period.nsec;
 
-		spin_lock_irqsave(&priv->ptp_lock, flags);
+		write_lock_irqsave(&priv->ptp_lock, flags);
 		ret = stmmac_flex_pps_config(priv, priv->ioaddr,
 					     rq->perout.index, cfg, on,
 					     priv->sub_second_inc,
 					     priv->systime_flags);
-		spin_unlock_irqrestore(&priv->ptp_lock, flags);
+		write_unlock_irqrestore(&priv->ptp_lock, flags);
 		break;
 	default:
 		break;
@@ -212,9 +212,9 @@ static u64 stmmac_ptp_clock_read(const struct cyclecounter *cc)
 	unsigned long flags;
 	u64 ns = 0;
 
-	spin_lock_irqsave(&priv->ptp_lock, flags);
+	read_lock_irqsave(&priv->ptp_lock, flags);
 	stmmac_get_systime(priv, priv->ptpaddr, &ns);
-	spin_unlock_irqrestore(&priv->ptp_lock, flags);
+	read_unlock_irqrestore(&priv->ptp_lock, flags);
 
 	return ns;
 }
@@ -268,7 +268,7 @@ void stmmac_ptp_register(struct stmmac_priv *priv)
 
 	stmmac_ptp_clock_ops.n_per_out = priv->dma_cap.pps_out_num;
 
-	spin_lock_init(&priv->ptp_lock);
+	rwlock_init(&priv->ptp_lock);
 	priv->ptp_clock_ops = stmmac_ptp_clock_ops;
 
 	priv->ptp_clock = ptp_clock_register(&priv->ptp_clock_ops,
