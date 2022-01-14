@@ -1,5 +1,5 @@
 /* Copyright 2008-2012 Freescale Semiconductor Inc.
- * Copyright 2019 NXP
+ * Copyright 2019-2022 NXP
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -415,6 +415,12 @@ struct dpa_priv_s {
 #ifdef CONFIG_FSL_DPAA_CEETM
 	bool ceetm_en; /* CEETM QoS enabled */
 #endif
+
+#ifdef CONFIG_FSL_DPAA_ETHERCAT
+	uint16_t ethercat_channel;  /* "fsl,qman-channel-id" */
+	struct qman_portal *p;
+	void *ecdev;
+#endif
 };
 
 struct fm_port_fqs {
@@ -460,6 +466,12 @@ int __hot skb_to_sg_fd(struct dpa_priv_s *priv,
 		       struct sk_buff *skb, struct qm_fd *fd);
 int __cold __attribute__((nonnull))
 	_dpa_fq_free(struct device *dev, struct qman_fq *fq);
+
+#ifdef CONFIG_FSL_DPAA_ETHERCAT
+#define ETH_P_ETHERCAT (0x88A4)
+int dpa_unregister_ethercat(struct net_device *net_dev);
+int ec_dpaa_receive_data(void *pecdev, const void *data, size_t size);
+#endif
 
 /* Turn on HW checksum computation for this outgoing frame.
  * If the current protocol is not something we support in this regard
