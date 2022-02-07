@@ -625,9 +625,7 @@ void dwmac5_fpe_configure(void __iomem *ioaddr, u32 num_txq, u32 num_rxq,
 	value |= EFPE;
 	writel(value, ioaddr + MAC_FPE_CTRL_STS);
 
-	value = readl(ioaddr + MTL_FPE_CTRL_STS);
-	value |= fpe->p_queues << MTL_FPECTRL_PEC_SHIFT;
-	value |= fpe->fragsize;
+	value = fpe->p_queues << MTL_FPECTRL_PEC_SHIFT | fpe->fragsize;
 	writel(value, ioaddr + MTL_FPE_CTRL_STS);
 }
 
