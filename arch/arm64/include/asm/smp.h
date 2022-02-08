@@ -57,6 +57,13 @@ enum ipi_msg_type {
 	IPI_CPU_STOP_NMI,
 	IPI_TIMER,
 	IPI_IRQ_WORK,
+#ifdef CONFIG_BAREMETAL
+#ifdef CONFIG_IMX8M_BAREMETAL
+	IPI_BAREMETAL_COMM = 9,
+#else
+	IPI_BAREMETAL_COMM = 8,
+#endif
+#endif
 	NR_IPI,
 	/*
 	 * Any enum >= NR_IPI and < MAX_IPI is special and not tracable
