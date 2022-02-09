@@ -1230,6 +1230,8 @@ static int felix_setup(struct dsa_switch *ds)
 		}
 	}
 
+	ocelot_setup_ptp_traps(ocelot);
+
 	err = ocelot_devlink_sb_register(ocelot);
 	if (err)
 		goto out_deinit_ports;
