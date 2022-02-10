@@ -5804,12 +5804,14 @@ static int stmmac_napi_poll_rxtx(struct napi_struct *napi, int budget)
  *   netdev structure and arrange for the device to be reset to a sane state
  *   in order to transmit a new packet.
  */
+#ifndef CONFIG_NET_SCH_MULTIQ
 static void stmmac_tx_timeout(struct net_device *dev, unsigned int txqueue)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
 
 	stmmac_global_err(priv);
 }
+#endif
 
 /**
  *  stmmac_set_rx_mode - entry point for multicast addressing
@@ -7107,7 +7109,9 @@ static const struct net_device_ops stmmac_netdev_ops = {
 	.ndo_fix_features = stmmac_fix_features,
 	.ndo_set_features = stmmac_set_features,
 	.ndo_set_rx_mode = stmmac_set_rx_mode,
+#ifndef CONFIG_NET_SCH_MULTIQ
 	.ndo_tx_timeout = stmmac_tx_timeout,
+#endif
 	.ndo_eth_ioctl = stmmac_ioctl,
 	.ndo_get_stats64 = stmmac_get_stats64,
 	.ndo_setup_tc = stmmac_setup_tc,
