@@ -712,9 +712,14 @@ void dwmac5_est_irq_status(void __iomem *ioaddr, struct net_device *dev,
 
 void dwmac5_fpe_configure(void __iomem *ioaddr, struct stmmac_fpe_cfg *cfg,
 			  u32 num_txq, u32 num_rxq,
-			  bool enable)
+			  bool enable, struct stmmac_fpe *fpe)
 {
 	u32 value;
+
+	if (fpe) {
+		value = fpe->p_queues << MTL_FPECTRL_PEC_SHIFT | fpe->fragsize;
+		writel(value, ioaddr + MTL_FPE_CTRL_STS);
+	}
 
 	if (enable) {
 		cfg->fpe_csr = EFPE;
@@ -726,6 +731,18 @@ void dwmac5_fpe_configure(void __iomem *ioaddr, struct stmmac_fpe_cfg *cfg,
 		cfg->fpe_csr = 0;
 	}
 	writel(cfg->fpe_csr, ioaddr + MAC_FPE_CTRL_STS);
+}
+
+void dwmac5_fpe_configure_get(void __iomem *ioaddr, struct stmmac_fpe *fpe)
+{
+	u32 value;
+
+	value = readl(ioaddr + MAC_FPE_CTRL_STS);
+	fpe->enable = value & EFPE;
+
+	value = readl(ioaddr + MTL_FPE_CTRL_STS);
+	fpe->p_queues = (value >> MTL_FPECTRL_PEC_SHIFT) & GENMASK(7, 0);
+	fpe->fragsize = value & GENMASK(1, 0);
 }
 
 int dwmac5_fpe_irq_status(void __iomem *ioaddr, struct net_device *dev)

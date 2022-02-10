@@ -969,6 +969,12 @@ static void stmmac_fpe_link_state_handle(struct stmmac_priv *priv, bool is_up)
 	} else {
 		*lo_state = FPE_STATE_OFF;
 		*lp_state = FPE_STATE_OFF;
+		if (*hs_enable)
+			stmmac_fpe_configure(priv, priv->ioaddr,
+					     fpe_cfg,
+					     priv->plat->tx_queues_to_use,
+					     priv->plat->rx_queues_to_use,
+					     0, NULL);
 	}
 }
 
@@ -7262,7 +7268,7 @@ static void stmmac_fpe_lp_task(struct work_struct *work)
 	enum stmmac_fpe_state *lo_state = &fpe_cfg->lo_fpe_state;
 	enum stmmac_fpe_state *lp_state = &fpe_cfg->lp_fpe_state;
 	bool *hs_enable = &fpe_cfg->hs_enable;
-	bool *enable = &fpe_cfg->enable;
+	bool enable = fpe_cfg->enable;
 	int retries = 20;
 
 	while (retries-- > 0) {
@@ -7276,7 +7282,7 @@ static void stmmac_fpe_lp_task(struct work_struct *work)
 					     fpe_cfg,
 					     priv->plat->tx_queues_to_use,
 					     priv->plat->rx_queues_to_use,
-					     *enable);
+					     enable, NULL);
 
 			netdev_info(priv->dev, "configured FPE\n");
 
@@ -7784,7 +7790,7 @@ int stmmac_suspend(struct device *dev)
 		stmmac_fpe_configure(priv, priv->ioaddr,
 				     priv->plat->fpe_cfg,
 				     priv->plat->tx_queues_to_use,
-				     priv->plat->rx_queues_to_use, false);
+				     priv->plat->rx_queues_to_use, false, NULL);
 
 		stmmac_fpe_handshake(priv, false);
 		stmmac_fpe_stop_wq(priv);
