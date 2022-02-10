@@ -1384,7 +1384,12 @@ static u32 ocelot_get_bridge_fwd_mask(struct ocelot *ocelot, int src_port,
 		if (!ocelot_port)
 			continue;
 
-		if (ocelot_port->stp_state == BR_STATE_FORWARDING &&
+		/* Keep the bridge port in forward mask if the port is forward
+		 * state or force_forward mode.
+		 * FRER need to set the port to force_forward mode.
+		 */
+		if ((ocelot_port->stp_state == BR_STATE_FORWARDING ||
+		     ocelot_port->force_forward) &&
 		    ocelot_port->bridge == bridge)
 			mask |= BIT(port);
 	}
@@ -1464,6 +1469,19 @@ void ocelot_apply_bridge_fwd_mask(struct ocelot *ocelot)
 	}
 }
 EXPORT_SYMBOL(ocelot_apply_bridge_fwd_mask);
+
+void ocelot_bridge_force_forward_port(struct ocelot *ocelot, int port, bool en)
+{
+	struct ocelot_port *ocelot_port = ocelot->ports[port];
+
+	if (en)
+		ocelot_port->force_forward = 1;
+	else
+		ocelot_port->force_forward = 0;
+
+	ocelot_apply_bridge_fwd_mask(ocelot);
+}
+EXPORT_SYMBOL(ocelot_bridge_force_forward_port);
 
 void ocelot_bridge_stp_state_set(struct ocelot *ocelot, int port, u8 state)
 {
