@@ -216,6 +216,7 @@ static int felix_qbv_set(struct net_device *ndev,
 
 	/* Select port */
 	ocelot_rmw(ocelot,
+		   QSYS_TAS_PARAM_CFG_CTRL_ALWAYS_GUARD_BAND_SCH_Q |
 		   QSYS_TAS_PARAM_CFG_CTRL_PORT_NUM(port),
 		   QSYS_TAS_PARAM_CFG_CTRL_ALWAYS_GUARD_BAND_SCH_Q |
 		   QSYS_TAS_PARAM_CFG_CTRL_PORT_NUM_M,
