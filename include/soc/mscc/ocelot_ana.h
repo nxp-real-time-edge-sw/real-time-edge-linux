@@ -235,6 +235,11 @@
 #define SFIDACCESS_CMD_WRITE                            2
 #define SFIDACCESS_CMD_INIT				3
 
+#define SFIDACCESS_CMD_IDLE                               0
+#define SFIDACCESS_CMD_READ                               1
+#define SFIDACCESS_CMD_WRITE                              2
+#define SFIDACCESS_CMD_INIT                               3
+
 #define ANA_TABLES_SFIDTIDX_SGID_VALID                    BIT(26)
 #define ANA_TABLES_SFIDTIDX_SGID(x)                       (((x) << 18) & GENMASK(25, 18))
 #define ANA_TABLES_SFIDTIDX_SGID_M                        GENMASK(25, 18)
