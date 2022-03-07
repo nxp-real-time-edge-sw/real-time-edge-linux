@@ -566,6 +566,7 @@ struct ocelot_ops {
 	int (*psfp_filter_del)(struct ocelot *ocelot, struct flow_cls_offload *f);
 	int (*psfp_stats_get)(struct ocelot *ocelot, struct flow_cls_offload *f,
 			      struct flow_stats *stats);
+	void (*tas_clock_adjust)(struct ocelot *ocelot);
 };
 
 struct ocelot_vcap_policer {
@@ -655,6 +656,8 @@ struct ocelot_port {
 	struct net_device		*bridge;
 	u8				stp_state;
 	bool				force_forward;
+
+	s64				base_time;
 };
 
 struct ocelot {
@@ -712,6 +715,9 @@ struct ocelot {
 
 	/* Lock for serializing access to the MAC table */
 	struct mutex			mact_lock;
+
+	/* Lock for serializing Time-Aware Shaper changes */
+	struct mutex			tas_lock;
 
 	struct workqueue_struct		*owq;
 
