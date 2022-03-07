@@ -1587,7 +1587,12 @@ static u32 ocelot_get_bridge_fwd_mask(struct ocelot *ocelot, int src_port,
 		if (!ocelot_port)
 			continue;
 
-		if (ocelot_port->stp_state == BR_STATE_FORWARDING &&
+		/* Keep the bridge port in forward mask if the port is forward
+		 * state or force_forward mode.
+		 * FRER need to set the port to force_forward mode.
+		 */
+		if ((ocelot_port->stp_state == BR_STATE_FORWARDING ||
+		     ocelot_port->force_forward) &&
 		    ocelot_port->bridge == bridge)
 			mask |= BIT(port);
 	}
@@ -1671,29 +1676,13 @@ EXPORT_SYMBOL(ocelot_apply_bridge_fwd_mask);
 void ocelot_bridge_force_forward_port(struct ocelot *ocelot, int port, bool en)
 {
 	struct ocelot_port *ocelot_port = ocelot->ports[port];
-	u32 mask;
-	int i;
 
-	if (!en) {
-		if (ocelot_port->force_forward) {
-			ocelot_apply_bridge_fwd_mask(ocelot);
-			ocelot_port->force_forward = 0;
-		}
-		return;
-	}
+	if (en)
+		ocelot_port->force_forward = 1;
+	else
+		ocelot_port->force_forward = 0;
 
-	if (ocelot_port->force_forward)
-		return;
-
-	ocelot_port->force_forward = 1;
-	for (i = 0; i < ocelot->num_phys_ports; i++) {
-		if (i == port)
-			continue;
-
-		mask = ocelot_read_rix(ocelot, ANA_PGID_PGID, PGID_SRC + i);
-		mask |= BIT(port);
-		ocelot_write_rix(ocelot, mask, ANA_PGID_PGID, PGID_SRC + i);
-	}
+	ocelot_apply_bridge_fwd_mask(ocelot);
 }
 EXPORT_SYMBOL(ocelot_bridge_force_forward_port);
 
@@ -1710,12 +1699,7 @@ void ocelot_bridge_stp_state_set(struct ocelot *ocelot, int port, u8 state)
 	ocelot_rmw_gix(ocelot, learn_ena, ANA_PORT_PORT_CFG_LEARN_ENA,
 		       ANA_PORT_PORT_CFG, port);
 
-	/* Do not apply FWD mask after force forward set. This keeps the port
-	 * in forwarding state.
-	 * FRER need to set the port to force_forward mode.
-	 */
-	if (!ocelot_port->force_forward)
-		ocelot_apply_bridge_fwd_mask(ocelot);
+	ocelot_apply_bridge_fwd_mask(ocelot);
 }
 EXPORT_SYMBOL(ocelot_bridge_stp_state_set);
 
