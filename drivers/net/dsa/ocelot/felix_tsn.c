@@ -163,10 +163,12 @@ static int felix_qbv_set(struct net_device *ndev,
 {
 	struct tsn_qbv_basic *admin_basic = &shaper_config->admin;
 	struct tsn_qbv_entry *control_list = admin_basic->control_list;
+	struct ocelot_port *ocelot_port;
 	struct timespec64 ts_base;
 	struct ocelot *ocelot;
 	struct dsa_port *dp;
-	int i, ret, port;
+	int ret = 0;
+	int i, port;
 	u32 val;
 
 	dp = dsa_port_from_netdev(ndev);
@@ -194,8 +196,13 @@ static int felix_qbv_set(struct net_device *ndev,
 		return -EINVAL;
 	}
 
+	ocelot_port = ocelot->ports[port];
+	ocelot_port->base_time = admin_basic->base_time;
+
 	felix_get_basetime(ocelot, admin_basic->base_time,
 			   admin_basic->cycle_time, &ts_base);
+
+	mutex_lock(&ocelot->tas_lock);
 
 	/* Select port */
 	ocelot_rmw(ocelot,
@@ -260,10 +267,11 @@ static int felix_qbv_set(struct net_device *ndev,
 		ret = readx_poll_timeout(felix_tas_read_status, ocelot, val,
 					 !(QSYS_TAS_PARAM_CFG_CTRL_CONFIG_CHANGE
 					 & val), 10, 100000);
-		return ret;
 	}
 
-	return 0;
+	mutex_unlock(&ocelot->tas_lock);
+
+	return ret;
 }
 
 static int felix_qbv_get(struct net_device *ndev, struct tsn_qbv_conf *shaper_config)
@@ -279,6 +287,8 @@ static int felix_qbv_get(struct net_device *ndev, struct tsn_qbv_conf *shaper_co
 	dp = dsa_port_from_netdev(ndev);
 	ocelot = dp->ds->priv;
 	port = dp->index;
+
+	mutex_lock(&ocelot->tas_lock);
 
 	ocelot_rmw(ocelot,
 		   QSYS_TAS_PARAM_CFG_CTRL_PORT_NUM(port),
@@ -306,8 +316,10 @@ static int felix_qbv_get(struct net_device *ndev, struct tsn_qbv_conf *shaper_co
 
 	list = kmalloc_array(admin->control_list_length,
 			     sizeof(struct tsn_qbv_entry), GFP_KERNEL);
-	if (!list)
+	if (!list) {
+		mutex_unlock(&ocelot->tas_lock);
 		return -ENOMEM;
+	}
 
 	admin->control_list = list;
 
@@ -325,6 +337,8 @@ static int felix_qbv_get(struct net_device *ndev, struct tsn_qbv_conf *shaper_co
 
 		list++;
 	}
+
+	mutex_unlock(&ocelot->tas_lock);
 
 	return 0;
 }
@@ -397,6 +411,8 @@ static int felix_qbv_get_status(struct net_device *ndev,
 	ocelot = dp->ds->priv;
 	port = dp->index;
 
+	mutex_lock(&ocelot->tas_lock);
+
 	ocelot_rmw(ocelot,
 		   QSYS_TAS_PARAM_CFG_CTRL_PORT_NUM(port),
 		   QSYS_TAS_PARAM_CFG_CTRL_PORT_NUM_M,
@@ -427,6 +443,8 @@ static int felix_qbv_get_status(struct net_device *ndev,
 
 	qbvstatus->current_time = cur_time;
 	felix_qbv_get_gatelist(ocelot, oper);
+
+	mutex_unlock(&ocelot->tas_lock);
 
 	return 0;
 }
