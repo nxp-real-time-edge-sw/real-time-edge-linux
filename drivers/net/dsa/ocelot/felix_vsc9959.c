@@ -6,6 +6,7 @@
 #include <soc/mscc/ocelot_qsys.h>
 #include <soc/mscc/ocelot_vcap.h>
 #include <soc/mscc/ocelot_ana.h>
+#include <soc/mscc/ocelot_dev.h>
 #include <soc/mscc/ocelot_ptp.h>
 #include <soc/mscc/ocelot_sys.h>
 #include <net/tc_act/tc_gate.h>
@@ -576,6 +577,29 @@ static const struct ocelot_stat_layout vsc9959_stats_layout[] = {
 	{ .offset = 0x29,	.name = "rx_green_prio_5", },
 	{ .offset = 0x2A,	.name = "rx_green_prio_6", },
 	{ .offset = 0x2B,	.name = "rx_green_prio_7", },
+	{ .offset = 0x2C,	.name = "rx_assembly_err", },
+	{ .offset = 0x2D,	.name = "rx_smd_err", },
+	{ .offset = 0x2E,	.name = "rx_assembly_ok", },
+	{ .offset = 0x2F,	.name = "rx_merge_fragments", },
+	{ .offset = 0x30,	.name = "rx_pmac_octets", },
+	{ .offset = 0x31,	.name = "rx_pmac_unicast", },
+	{ .offset = 0x32,	.name = "rx_pmac_multicast", },
+	{ .offset = 0x33,	.name = "rx_pmac_broadcast", },
+	{ .offset = 0x34,	.name = "rx_pmac_short", },
+	{ .offset = 0x35,	.name = "rx_pmac_fragments", },
+	{ .offset = 0x36,	.name = "rx_pmac_jabber", },
+	{ .offset = 0x37,	.name = "rx_pmac_crc", },
+	{ .offset = 0x38,	.name = "rx_pmac_symbol_err", },
+	{ .offset = 0x39,	.name = "rx_pmac_sz_64", },
+	{ .offset = 0x3A,	.name = "rx_pmac_sz_65_127", },
+	{ .offset = 0x3B,	.name = "rx_pmac_sz_128_255", },
+	{ .offset = 0x3C,	.name = "rx_pmac_sz_256_511", },
+	{ .offset = 0x3D,	.name = "rx_pmac_sz_512_1023", },
+	{ .offset = 0x3E,	.name = "rx_pmac_sz_1024_1526", },
+	{ .offset = 0x3F,	.name = "rx_pmac_sz_jumbo", },
+	{ .offset = 0x40,	.name = "rx_pmac_pause", },
+	{ .offset = 0x41,	.name = "rx_pmac_control", },
+	{ .offset = 0x42,	.name = "rx_pmac_long", },
 	{ .offset = 0x80,	.name = "tx_octets", },
 	{ .offset = 0x81,	.name = "tx_unicast", },
 	{ .offset = 0x82,	.name = "tx_multicast", },
@@ -606,6 +630,20 @@ static const struct ocelot_stat_layout vsc9959_stats_layout[] = {
 	{ .offset = 0x9C,	.name = "tx_green_prio_6", },
 	{ .offset = 0x9D,	.name = "tx_green_prio_7", },
 	{ .offset = 0x9E,	.name = "tx_aged", },
+	{ .offset = 0x9F,	.name = "tx_mm_hold", },
+	{ .offset = 0xA0,	.name = "tx_merge_fragments", },
+	{ .offset = 0xA1,	.name = "tx_pmac_octets", },
+	{ .offset = 0xA2,	.name = "tx_pmac_unicast", },
+	{ .offset = 0xA3,	.name = "tx_pmac_multicast", },
+	{ .offset = 0xA4,	.name = "tx_pmac_broadcast", },
+	{ .offset = 0xA5,	.name = "tx_pmac_pause", },
+	{ .offset = 0xA6,	.name = "tx_pmac_sz_64", },
+	{ .offset = 0xA7,	.name = "tx_pmac_sz_65_127", },
+	{ .offset = 0xA8,	.name = "tx_pmac_sz_128_255", },
+	{ .offset = 0xA9,	.name = "tx_pmac_sz_256_511", },
+	{ .offset = 0xAA,	.name = "tx_pmac_sz_512_1023", },
+	{ .offset = 0xAB,	.name = "tx_pmac_sz_1024_1526", },
+	{ .offset = 0xAC,	.name = "tx_pmac_sz_jumbo", },
 	{ .offset = 0x100,	.name = "drop_local", },
 	{ .offset = 0x101,	.name = "drop_tail", },
 	{ .offset = 0x102,	.name = "drop_yellow_prio_0", },
@@ -2219,6 +2257,65 @@ static const struct ocelot_ops vsc9959_ops = {
 	.tas_clock_adjust	= vsc9959_tas_clock_adjust,
 };
 
+static int vsc9959_port_set_preempt(struct ocelot *ocelot, int port,
+				    struct ethtool_fp *fpcmd)
+{
+	struct ocelot_port *ocelot_port = ocelot->ports[port];
+	int p_queues = fpcmd->preemptible_queues_mask;
+	int mm_fragsize;
+
+	if (fpcmd->min_frag_size < 60 || fpcmd->min_frag_size > 252)
+		return -EINVAL;
+
+	mm_fragsize = DIV_ROUND_UP((fpcmd->min_frag_size + 4), 64) - 1;
+	fpcmd->fp_supported = 1;
+
+	ocelot_port_rmwl(ocelot_port,
+			 DEV_MM_CONFIG_ENABLE_CONFIG_MM_RX_ENA |
+			 DEV_MM_CONFIG_ENABLE_CONFIG_MM_TX_ENA,
+			 DEV_MM_CONFIG_ENABLE_CONFIG_MM_RX_ENA |
+			 DEV_MM_CONFIG_ENABLE_CONFIG_MM_TX_ENA,
+			 DEV_MM_ENABLE_CONFIG);
+
+	ocelot_port_rmwl(ocelot_port,
+			 (fpcmd->fp_enabled ?
+			  0 : DEV_MM_CONFIG_VERIF_CONFIG_PRM_VERIFY_DIS),
+			 DEV_MM_CONFIG_VERIF_CONFIG_PRM_VERIFY_DIS,
+			 DEV_MM_VERIF_CONFIG);
+
+	ocelot_rmw_rix(ocelot,
+		       QSYS_PREEMPTION_CFG_MM_ADD_FRAG_SIZE(mm_fragsize) |
+		       QSYS_PREEMPTION_CFG_P_QUEUES(p_queues),
+		       QSYS_PREEMPTION_CFG_MM_ADD_FRAG_SIZE_M |
+		       QSYS_PREEMPTION_CFG_P_QUEUES_M,
+		       QSYS_PREEMPTION_CFG,
+		       port);
+
+	return 0;
+}
+
+static int vsc9959_port_get_preempt(struct ocelot *ocelot, int port,
+				    struct ethtool_fp *fpcmd)
+{
+	struct ocelot_port *ocelot_port = ocelot->ports[port];
+	u8 fragsize;
+	u32 val;
+
+	fpcmd->fp_supported = 1;
+	fpcmd->supported_queues_mask = GENMASK(7, 0);
+
+	val = ocelot_port_readl(ocelot_port, DEV_MM_VERIF_CONFIG);
+	val &= DEV_MM_CONFIG_VERIF_CONFIG_PRM_VERIFY_DIS;
+	fpcmd->fp_enabled = (val ? 0 : 1);
+
+	val = ocelot_read_rix(ocelot, QSYS_PREEMPTION_CFG, port);
+	fpcmd->preemptible_queues_mask = val & QSYS_PREEMPTION_CFG_P_QUEUES_M;
+	fragsize = QSYS_PREEMPTION_CFG_MM_ADD_FRAG_SIZE_X(val);
+	fpcmd->min_frag_size = (fragsize + 1) * 64 - 4;
+
+	return 0;
+}
+
 static const struct felix_info felix_info_vsc9959 = {
 	.target_io_res		= vsc9959_target_io_res,
 	.port_io_res		= vsc9959_port_io_res,
@@ -2246,6 +2343,8 @@ static const struct felix_info felix_info_vsc9959 = {
 	.prevalidate_phy_mode	= vsc9959_prevalidate_phy_mode,
 	.port_setup_tc		= vsc9959_port_setup_tc,
 	.port_sched_speed_set	= vsc9959_sched_speed_set,
+	.port_set_preempt	= vsc9959_port_set_preempt,
+	.port_get_preempt	= vsc9959_port_get_preempt,
 };
 
 static irqreturn_t felix_irq_handler(int irq, void *data)
