@@ -1,4 +1,5 @@
 /* Copyright 2008-2012 Freescale Semiconductor, Inc.
+ * Copyright 2019-2022 NXP
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -722,6 +723,50 @@ static int qman_online_cpu(unsigned int cpu)
 
 #endif /* CONFIG_HOTPLUG_CPU */
 
+#ifdef CONFIG_FSL_DPAA_ETHERCAT
+__init void qman_ethercat_portal_init(int cpu)
+{
+	struct qm_portal_config *pcfg;
+	struct qman_portal *p;
+
+	pcfg = get_pcfg(&unused_pcfgs);
+	if (pcfg) {
+		pcfg->public_cfg.cpu = cpu;
+		pcfg->public_cfg.is_shared = 0;
+
+		pcfg->iommu_domain = NULL;
+		portal_set_cpu(pcfg, pcfg->public_cfg.cpu);
+		p = qman_create_affine_portal_ethercat(pcfg, NULL, cpu);
+		if (p) {
+			pr_info("Qman portal %sinitialised, cpu %d\n",
+				pcfg->public_cfg.is_shared ? "(shared) " : "",
+				pcfg->public_cfg.cpu);
+		} else {
+			pr_crit("Qman portal failure on cpu %d\n",
+				pcfg->public_cfg.cpu);
+		}
+		return;
+	}
+}
+
+static u32 qman_affine_last_cpu;
+
+u32 qman_get_affine_last_cpu(void)
+{
+	return qman_affine_last_cpu;
+}
+
+__init void qman_ethercat_portal_init_on_cpu(void)
+{
+	int cpu = 0;
+
+	for_each_online_cpu(cpu) {
+		qman_affine_last_cpu = cpu;
+		qman_ethercat_portal_init(cpu);
+	}
+}
+#endif
+
 __init int qman_init(void)
 {
 	struct cpumask slave_cpus;
@@ -877,6 +922,11 @@ __init int qman_init(void)
 		return ret;
 	}
 #endif
+
+#ifdef CONFIG_FSL_DPAA_ETHERCAT
+	qman_ethercat_portal_init_on_cpu();
+#endif
+
 	return 0;
 }
 
