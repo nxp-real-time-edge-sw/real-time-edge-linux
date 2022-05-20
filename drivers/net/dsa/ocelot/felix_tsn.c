@@ -19,7 +19,7 @@
 #include "felix_tsn.h"
 #include "felix.h"
 
-#define ETH_P_8021CB		0x2345
+#define ETH_P_8021CB		0xF1C1
 #define FELIX_QSYS_HSCH_NUM	72
 /* MSCC TSN parameters limited */
 #define FELIX_PSFP_SFID_NUM	176
