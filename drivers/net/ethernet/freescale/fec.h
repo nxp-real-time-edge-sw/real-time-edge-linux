@@ -21,6 +21,7 @@
 #include <linux/timecounter.h>
 #include <dt-bindings/firmware/imx/rsrc.h>
 #include <linux/firmware/imx/sci.h>
+#include <linux/fec.h>
 
 #if defined(CONFIG_M523x) || defined(CONFIG_M527x) || defined(CONFIG_M528x) || \
     defined(CONFIG_M520x) || defined(CONFIG_M532x) || defined(CONFIG_ARM) || \
@@ -332,28 +333,30 @@ struct bufdesc_ex {
 				(IDLE_SLOPE_2 & IDLE_SLOPE_MASK))
 #define RCMR_MATCHEN		(0x1 << 16)
 #define RCMR_CMP_CFG(v, n)	(((v) & 0x7) <<  (n << 2))
+#ifdef CONFIG_AVB_SUPPORT
+#define SR_CLASS_A_PRIORITY	3
+#define SR_CLASS_B_PRIORITY	2
+#define RCMR_CMP_1		(RCMR_CMP_CFG(SR_CLASS_A_PRIORITY, 0) | \
+				RCMR_CMP_CFG(SR_CLASS_A_PRIORITY, 1) | \
+				RCMR_CMP_CFG(SR_CLASS_A_PRIORITY, 2) | \
+				RCMR_CMP_CFG(SR_CLASS_A_PRIORITY, 3))
+#define RCMR_CMP_2		(RCMR_CMP_CFG(SR_CLASS_B_PRIORITY, 0) | \
+				RCMR_CMP_CFG(SR_CLASS_B_PRIORITY, 1) | \
+				RCMR_CMP_CFG(SR_CLASS_B_PRIORITY, 2) | \
+				RCMR_CMP_CFG(SR_CLASS_B_PRIORITY, 3))
+#else
 #define RCMR_CMP_1		(RCMR_CMP_CFG(0, 0) | RCMR_CMP_CFG(1, 1) | \
 				RCMR_CMP_CFG(2, 2) | RCMR_CMP_CFG(3, 3))
 #define RCMR_CMP_2		(RCMR_CMP_CFG(4, 0) | RCMR_CMP_CFG(5, 1) | \
 				RCMR_CMP_CFG(6, 2) | RCMR_CMP_CFG(7, 3))
+#endif
 #define RCMR_CMP(X)		(((X) == 1) ? RCMR_CMP_1 : RCMR_CMP_2)
 #define FEC_TX_BD_FTYPE(X)	(((X) & 0xf) << 20)
 
-/* The number of Tx and Rx buffers.  These are allocated from the page
- * pool.  The code may assume these are power of two, so it it best
- * to keep them that size.
- * We don't need to allocate pages for the transmitter.  We just use
- * the skbuffer directly.
- */
+#define FEC_RX_FLUSH(X)		(1 << ((X) + 3))
 
-#define FEC_ENET_RX_PAGES	256
-#define FEC_ENET_RX_FRSIZE	2048
-#define FEC_ENET_RX_FRPPG	(PAGE_SIZE / FEC_ENET_RX_FRSIZE)
-#define RX_RING_SIZE		(FEC_ENET_RX_FRPPG * FEC_ENET_RX_PAGES)
-#define FEC_ENET_TX_FRSIZE	2048
-#define FEC_ENET_TX_FRPPG	(PAGE_SIZE / FEC_ENET_TX_FRSIZE)
-#define TX_RING_SIZE		512	/* Must be power of two */
-#define TX_RING_MOD_MASK	511	/*   for this to work */
+#define FEC_TX_SCHEME_CB	0x0 /* Credit based */
+#define FEC_TX_SCHEME_RR	0x1 /* Round-robin */
 
 #define BD_ENET_RX_INT		0x00800000
 #define BD_ENET_RX_PTP		((ushort)0x0400)
@@ -521,20 +524,31 @@ struct bufdesc_prop {
 
 struct fec_enet_priv_tx_q {
 	struct bufdesc_prop bd;
-	unsigned char *tx_bounce[TX_RING_SIZE];
-	struct  sk_buff *tx_skbuff[TX_RING_SIZE];
+	struct bufdesc	*dirty_tx;
+	struct  sk_buff *tx_skbuff[FEC_TX_RING_SIZE];
 
+	unsigned int tx_bounce_size;
+
+#ifdef CONFIG_AVB_SUPPORT
+	unsigned int tx_index;
+	unsigned char *tx_bounce[FEC_TX_RING_SIZE + 32];
+#else
+	unsigned char *tx_bounce[FEC_TX_RING_SIZE];
+#endif
 	unsigned short tx_stop_threshold;
 	unsigned short tx_wake_threshold;
 
-	struct bufdesc	*dirty_tx;
 	char *tso_hdrs;
 	dma_addr_t tso_hdrs_dma;
+
+#ifdef CONFIG_AVB_SUPPORT
+	unsigned long	tx_idle_slope;
+#endif
 };
 
 struct fec_enet_priv_rx_q {
 	struct bufdesc_prop bd;
-	struct  sk_buff *rx_skbuff[RX_RING_SIZE];
+	struct  sk_buff *rx_skbuff[FEC_RX_RING_SIZE];
 };
 
 struct fec_stop_mode_gpr {
@@ -542,6 +556,10 @@ struct fec_stop_mode_gpr {
 	u8 reg;
 	u8 bit;
 };
+
+#ifdef CONFIG_AVB_SUPPORT
+#define AVB_DMA_MAPPING		1
+#endif
 
 /* The FEC buffer descriptors track the ring buffers.  The rx_bd_base and
  * tx_bd_base always point to the base of the buffer descriptors.  The
@@ -576,6 +594,12 @@ struct fec_enet_private {
 	unsigned int total_tx_ring_size;
 	unsigned int total_rx_ring_size;
 
+#ifdef CONFIG_AVB_SUPPORT
+	const struct avb_ops *avb;
+	void *avb_data;
+	unsigned int avb_enabled;
+	__ETHTOOL_DECLARE_LINK_MODE_MASK(phy_advertising);
+#endif
 	struct	platform_device *pdev;
 
 	int	dev_id;
@@ -607,7 +631,7 @@ struct fec_enet_private {
 	struct ptp_clock *ptp_clock;
 	struct ptp_clock_info ptp_caps;
 	unsigned long last_overflow_check;
-	spinlock_t tmreg_lock;
+	raw_spinlock_t tmreg_lock;
 	struct cyclecounter cc;
 	struct timecounter tc;
 	int rx_hwtstamp_filter;
@@ -615,6 +639,13 @@ struct fec_enet_private {
 	u32 cycle_speed;
 	int hwts_rx_en;
 	int hwts_tx_en;
+
+	/* Transmit and receive latency, depending on link speed, for
+	 * packets timestamps in ns
+	 */
+	u32 rx_tstamp_latency;
+	u32 tx_tstamp_latency;
+
 	struct delayed_work time_keep;
 	struct regulator *reg_phy;
 	struct fec_stop_mode_gpr stop_gpr;
@@ -647,8 +678,34 @@ struct fec_enet_private {
 
 	struct imx_sc_ipc *ipc_handle;
 
+	/* Configured rx/tx timestamps delays for different link speeds
+	 * to compensate for FEC-PHY latency in ns
+	 */
+	u32 rx_delay_100;
+	u32 tx_delay_100;
+	u32 rx_delay_1000;
+	u32 tx_delay_1000;
+
+#ifdef CONFIG_AVB_SUPPORT
+	int rec_channel;
+	int rec_enable;
+#endif
+
 	u64 ethtool_stats[];
 };
+
+#ifdef CONFIG_AVB_SUPPORT
+#define FEC_MAX_RATE		400	/* Mbps */
+#define FEC_MAX_RATE_HAS_AVB	1000	/* Mbps */
+
+static inline int fec_max_rate(struct fec_enet_private *fep)
+{
+	int max_rate = (fep->quirks & FEC_QUIRK_HAS_AVB) ? FEC_MAX_RATE_HAS_AVB : FEC_MAX_RATE;
+	return min(max_rate, fep->speed);
+}
+
+#define IDLE_SLOPE_DIVISOR	512
+#endif
 
 void fec_ptp_init(struct platform_device *pdev, int irq_idx);
 void fec_ptp_stop(struct platform_device *pdev);
