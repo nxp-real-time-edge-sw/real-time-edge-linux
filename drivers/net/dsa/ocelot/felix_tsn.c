@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: (GPL-2.0 OR MIT)
 /* Felix Switch TSN driver
  *
- * Copyright 2020-2021 NXP Semiconductors
+ * Copyright 2020-2022 NXP
  */
 
 #include <soc/mscc/ocelot_qsys.h>
