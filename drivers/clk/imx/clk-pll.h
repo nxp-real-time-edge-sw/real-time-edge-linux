@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Copyright 2022 NXP
+ *
+ */
+
 #ifndef __IMX_CLK_PLL_H
 #define __IMX_CLK_PLL_H
 
