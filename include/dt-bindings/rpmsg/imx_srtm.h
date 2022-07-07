@@ -1,4 +1,9 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Copyright 2022 NXP
+ *
+ */
+
 #ifndef _DT_BINDINGS_RPMSG_IMX_SRTM_H
 #define _DT_BINDINGS_RPMSG_IMX_SRTM_H
 
