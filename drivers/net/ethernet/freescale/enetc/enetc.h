@@ -432,6 +432,7 @@ int enetc_xdp_xmit(struct net_device *ndev, int num_frames,
 
 /* ethtool */
 void enetc_set_ethtool_ops(struct net_device *ndev);
+void enetc_preempt_reset(struct enetc_hw *hw);
 
 /* control buffer descriptor ring (CBDR) */
 int enetc_setup_cbdr(struct device *dev, struct enetc_hw *hw, int bd_count,
