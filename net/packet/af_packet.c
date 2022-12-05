@@ -3182,9 +3182,10 @@ static int packet_release(struct socket *sock)
  *	Attach a packet hook.
  */
 
-static int packet_do_bind(struct sock *sk, const char *name, int ifindex,
+static int packet_do_bind(struct socket *sock, const char *name, int ifindex,
 			  __be16 proto)
 {
+	struct sock *sk = sock->sk;
 	struct packet_sock *po = pkt_sk(sk);
 	struct net_device *dev = NULL;
 	bool unlisted = false;
@@ -3250,6 +3251,7 @@ static int packet_do_bind(struct sock *sk, const char *name, int ifindex,
 			po->prot_hook.dev = dev;
 			WRITE_ONCE(po->ifindex, dev ? dev->ifindex : 0);
 			packet_cached_dev_assign(po, dev);
+			sock->ndev = dev;
 		}
 		dev_put(dev);
 	}
@@ -3294,7 +3296,8 @@ static int packet_bind_spkt(struct socket *sock, struct sockaddr *uaddr,
 	memcpy(name, uaddr->sa_data, sizeof(uaddr->sa_data));
 	name[sizeof(uaddr->sa_data)] = 0;
 
-	return packet_do_bind(sk, name, 0, 0);
+
+	return packet_do_bind(sock, name, 0, 0);
 }
 
 static int packet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
@@ -3311,7 +3314,7 @@ static int packet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len
 	if (sll->sll_family != AF_PACKET)
 		return -EINVAL;
 
-	return packet_do_bind(sk, NULL, sll->sll_ifindex, sll->sll_protocol);
+	return packet_do_bind(sock, NULL, sll->sll_ifindex, sll->sll_protocol);
 }
 
 static struct proto packet_proto = {

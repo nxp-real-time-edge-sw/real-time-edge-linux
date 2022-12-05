@@ -124,6 +124,8 @@ struct socket {
 	const struct proto_ops	*ops;
 
 	struct socket_wq	wq;
+
+	struct net_device *ndev;
 };
 
 /*
