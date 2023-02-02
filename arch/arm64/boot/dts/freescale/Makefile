@@ -143,6 +143,7 @@ dtb-$(CONFIG_ARCH_MXC) += imx8mm-evk.dtb imx8mm-evk-rpmsg.dtb imx8mm-evk-rm67191
 			  imx8mm-evk-usd-wifi.dtb \
 			  imx8mm-evk-qca-wifi.dtb \
 			  imx8mm-evk-dpdk.dtb \
+			  imx8mm-evk-harpoon-virtio-net.dtb \
 			  imx8mm-evk-rm67199.dtb imx8mm-evk-rm67191-cmd-ram.dtb imx8mm-evk-rm67199-cmd-ram.dtb \
 			  imx8mm-evk-lk.dtb imx8mm-evk-rm692c9.dtb \
 			  imx8mm-evk-rpmsg-8m-buf.dtb
@@ -161,7 +162,8 @@ dtb-$(CONFIG_ARCH_MXC) += imx8mm-evk-rpmsg-ca53.dtb \
 			  imx8mp-evk-virtio-perf-cm7.dtb \
 			  imx8mp-evk-multicore-rtos.dtb \
 			  imx8mp-evk-multicore-lwip.dtb \
-			  imx8mp-evk-multicore-rpmsg.dtb
+			  imx8mp-evk-multicore-rpmsg.dtb \
+			  imx8mp-evk-harpoon-virtio-net.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mm-evk-ak4497.dtb imx8mm-evk-ak5558.dtb imx8mm-evk-audio-tdm.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mm-evk-8mic-revE.dtb imx8mm-evk-8mic-swpdm.dtb \
 			  imx8mm-evk-iqaudio-dacplus.dtb imx8mm-evk-iqaudio-dacpro.dtb imx8mm-evk-hifiberry-dacplus.dtb \
@@ -667,6 +669,7 @@ dtb-$(CONFIG_ARCH_MXC) += imx93-14x14-evk.dtb \
 			  imx93-14x14-evk-uart-sharing-cm33.dtb \
 			  imx93-14x14-evk-multicore-rtos.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk.dtb \
+			  imx93-11x11-evk-harpoon-virtio-net.dtb \
 			  imx93-jailhouse-inmate.dtb imx93-11x11-evk-root.dtb imx93-11x11-evk-flexio-i2c.dtb \
 			  imx93-11x11-evk-lpuart.dtb \
 			  imx93-11x11-evk-mqs.dtb imx93-11x11-evk-aud-hat.dtb \
