@@ -1428,8 +1428,8 @@ static int napi_kthread_create(struct napi_struct *n)
 	 * TASK_INTERRUPTIBLE mode to avoid the blocked task
 	 * warning and work with loadavg.
 	 */
-	n->thread = kthread_run(napi_threaded_poll, n, "napi/%s-%d",
-				n->dev->name, n->napi_id);
+	n->thread = kthread_run(napi_threaded_poll, n, "napi/%s-%s",
+				n->dev->name, n->name);
 	if (IS_ERR(n->thread)) {
 		err = PTR_ERR(n->thread);
 		pr_err("kthread_run failed with err %d\n", err);
@@ -6414,8 +6414,9 @@ int dev_set_threaded(struct net_device *dev, bool threaded)
 }
 EXPORT_SYMBOL(dev_set_threaded);
 
-void netif_napi_add_weight(struct net_device *dev, struct napi_struct *napi,
-			   int (*poll)(struct napi_struct *, int), int weight)
+void netif_napi_add_named(struct net_device *dev, struct napi_struct *napi,
+			   int (*poll)(struct napi_struct *, int), int weight,
+			   const char *name)
 {
 	if (WARN_ON(test_and_set_bit(NAPI_STATE_LISTED, &napi->state)))
 		return;
@@ -6443,12 +6444,25 @@ void netif_napi_add_weight(struct net_device *dev, struct napi_struct *napi,
 	list_add_rcu(&napi->dev_list, &dev->napi_list);
 	napi_hash_add(napi);
 	napi_get_frags_check(napi);
+
+	if (name)
+		strncpy(napi->name, name, NAPINAMSIZ);
+	else
+		snprintf(napi->name, NAPINAMSIZ, "%d", napi->napi_id);
+
 	/* Create kthread for this napi if dev->threaded is set.
 	 * Clear dev->threaded if kthread creation failed so that
 	 * threaded mode will not be enabled in napi_enable().
 	 */
 	if (dev->threaded && napi_kthread_create(napi))
 		dev->threaded = 0;
+}
+EXPORT_SYMBOL(netif_napi_add_named);
+
+void netif_napi_add_weight(struct net_device *dev, struct napi_struct *napi,
+			   int (*poll)(struct napi_struct *, int), int weight)
+{
+	netif_napi_add_named(dev, napi, poll, weight, NULL);
 }
 EXPORT_SYMBOL(netif_napi_add_weight);
 
