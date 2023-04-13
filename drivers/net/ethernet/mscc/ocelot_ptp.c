@@ -549,6 +549,9 @@ int ocelot_hwstamp_set(struct ocelot *ocelot, int port,
 	if (err)
 		return err;
 
+	if (cfg->tx_type == HWTSTAMP_TX_ON)
+		skb_queue_purge(&ocelot_port->tx_skbs);
+
 	switch (cfg->rx_filter) {
 	case HWTSTAMP_FILTER_NONE:
 		break;
