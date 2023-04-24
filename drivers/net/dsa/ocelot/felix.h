@@ -60,6 +60,11 @@ struct felix_info {
 	void	(*tas_guard_bands_update)(struct ocelot *ocelot, int port);
 	void	(*port_sched_speed_set)(struct ocelot *ocelot, int port,
 					int speed);
+	int	(*port_set_preempt)(struct ocelot *ocelot, int port,
+				    struct ethtool_fp *fpcmd);
+	int	(*port_get_preempt)(struct ocelot *ocelot, int port,
+				    struct ethtool_fp *fpcmd);
+	void	(*port_preempt_reset)(struct ocelot *ocelot, int port, bool enable);
 };
 
 /* Methods for initializing the hardware resources specific to a tagging
