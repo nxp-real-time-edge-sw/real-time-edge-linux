@@ -55,6 +55,14 @@ static const char *mclk_out_sels[] = {
 	"dummy",
 };
 
+static const char *gpt_mux_clk_sels[] = {
+	"aud_pll_div_clk0_lpcg_clk",
+	"aud_pll_div_clk1_lpcg_clk",
+	"acm_aud_clk0_sel",
+	"acm_aud_clk1_sel",
+	"dummy",
+};
+
 static const char *sai_mclk_sels[] = {
 	"aud_pll_div_clk0_lpcg_clk",
 	"aud_pll_div_clk1_lpcg_clk",
@@ -137,6 +145,8 @@ static int imx8dxl_acm_clk_probe(struct platform_device *pdev)
 	clks[IMX_ADMA_ACM_MCLKOUT0_SEL]	= imx_dev_clk_mux(dev, "acm_mclkout0_sel", base+0x020000, 0, 3, mclk_out_sels, ARRAY_SIZE(mclk_out_sels));
 	clks[IMX_ADMA_ACM_MCLKOUT1_SEL]	= imx_dev_clk_mux(dev, "acm_mclkout1_sel", base+0x030000, 0, 3, mclk_out_sels, ARRAY_SIZE(mclk_out_sels));
 
+	clks[IMX_ADMA_ACM_GPT0_MUX_CLK_SEL] = imx_dev_clk_mux(dev, "acm_gpt0_mux_clk_sel", base+0x080000, 0, 3, gpt_mux_clk_sels, ARRAY_SIZE(gpt_mux_clk_sels));
+
 	clks[IMX_ADMA_ACM_SAI0_MCLK_SEL] = imx_dev_clk_mux(dev, "acm_sai0_mclk_sel", base+0x0E0000, 0, 2, sai_mclk_sels, ARRAY_SIZE(sai_mclk_sels));
 	clks[IMX_ADMA_ACM_SAI1_MCLK_SEL] = imx_dev_clk_mux(dev, "acm_sai1_mclk_sel", base+0x0F0000, 0, 2, sai_mclk_sels, ARRAY_SIZE(sai_mclk_sels));
 	clks[IMX_ADMA_ACM_SAI2_MCLK_SEL] = imx_dev_clk_mux(dev, "acm_sai2_mclk_sel", base+0x100000, 0, 2, sai_mclk_sels, ARRAY_SIZE(sai_mclk_sels));
@@ -182,6 +192,7 @@ static int __maybe_unused imx8dxl_acm_runtime_suspend(struct device *dev)
 	priv->regs[1]  = readl_relaxed(priv->reg + 0x010000);
 	priv->regs[2]  = readl_relaxed(priv->reg + 0x020000);
 	priv->regs[3]  = readl_relaxed(priv->reg + 0x030000);
+	priv->regs[8] = readl_relaxed(priv->reg + 0x080000);
 	priv->regs[14] = readl_relaxed(priv->reg + 0x0E0000);
 	priv->regs[15] = readl_relaxed(priv->reg + 0x0F0000);
 	priv->regs[16] = readl_relaxed(priv->reg + 0x100000);
@@ -200,6 +211,7 @@ static int __maybe_unused imx8dxl_acm_runtime_resume(struct device *dev)
 	writel_relaxed(priv->regs[1],  priv->reg + 0x010000);
 	writel_relaxed(priv->regs[2],  priv->reg + 0x020000);
 	writel_relaxed(priv->regs[3],  priv->reg + 0x030000);
+	writel_relaxed(priv->regs[8], priv->reg + 0x080000);
 	writel_relaxed(priv->regs[14], priv->reg + 0x0E0000);
 	writel_relaxed(priv->regs[15], priv->reg + 0x0F0000);
 	writel_relaxed(priv->regs[16], priv->reg + 0x100000);
