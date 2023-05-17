@@ -708,7 +708,8 @@ dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk.dtb \
 			  imx93-11x11-evk-multicore-rtos.dtb \
 			  imx93-11x11-evk-ecat.dtb \
 			  imx93-11x11-evk-igh.dtb \
-			  imx93-11x11-evk-dpdk.dtb
+			  imx93-11x11-evk-dpdk.dtb \
+			  imx93-11x11-evk-baremetal.dtb
 
 dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk-dsa.dtb \
 			  imx93-11x11-evk-dsa-enetc.dtb \
