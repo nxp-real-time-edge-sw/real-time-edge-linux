@@ -56,13 +56,17 @@ void __iomem *share_base;
 #define CONFIG_SYS_DDR_SDRAM_SLAVE_ADDR (0x60000000)
 #define CONFIG_SYS_DDR_SDRAM_SLAVE_SIZE (32 * 1024 * 1024)
 #define CONFIG_SYS_DDR_SDRAM_SLAVE_RESERVE_SIZE (32 * 1024 *1024)
+#elif defined(CONFIG_IMX93_BAREMETAL)
+#define CONFIG_SYS_DDR_SDRAM_SLAVE_ADDR (0xb0000000)
+#define CONFIG_SYS_DDR_SDRAM_SLAVE_SIZE (32 * 1024 * 1024)
+#define CONFIG_SYS_DDR_SDRAM_SLAVE_RESERVE_SIZE (32 * 1024 *1024)
 #else
 #define CONFIG_SYS_DDR_SDRAM_BASE       0x80000000UL
 #define CONFIG_SYS_DDR_SDRAM_SLAVE_SIZE        (256 * 1024 * 1024)
 #define CONFIG_SYS_DDR_SDRAM_MASTER_SIZE       (512 * 1024 * 1024)
 #endif
 
-#if defined(CONFIG_IMX8M_BAREMETAL)
+#if defined(CONFIG_IMX8M_BAREMETAL) || defined(CONFIG_IMX93_BAREMETAL)
 #define CONFIG_SYS_DDR_SDRAM_SHARE_BASE (CONFIG_SYS_DDR_SDRAM_SLAVE_ADDR  \
 		+ CONFIG_SYS_DDR_SDRAM_SLAVE_SIZE*(CONFIG_MAX_CPUS-1))
 #define CONFIG_SYS_DDR_SDRAM_SHARE_RESERVE_SIZE (4 * 1024 * 1024)
@@ -80,8 +84,8 @@ void __iomem *share_base;
 #elif defined(CONFIG_LX2160A_BAREMETAL)
 #define CONFIG_SYS_DDR_SDRAM_SHARE_SIZE \
 	((64 * 1024 * 1024) - CONFIG_SYS_DDR_SDRAM_SHARE_RESERVE_SIZE)
-#elif defined(CONFIG_IMX8M_BAREMETAL)
-#define CONFIG_SYS_DDR_SDRAM_SHARE_SIZE ( CONFIG_SYS_DDR_SDRAM_SLAVE_RESERVE_SIZE \
+#elif defined(CONFIG_IMX8M_BAREMETAL) || defined(CONFIG_IMX93_BAREMETAL)
+#define CONFIG_SYS_DDR_SDRAM_SHARE_SIZE (CONFIG_SYS_DDR_SDRAM_SLAVE_RESERVE_SIZE \
 		- CONFIG_SYS_DDR_SDRAM_SHARE_RESERVE_SIZE)
 #else
 #define CONFIG_SYS_DDR_SDRAM_SHARE_SIZE \
@@ -194,9 +198,20 @@ static int ipi_baremetal_release(struct inode *inode, struct file *file)
 static long ipi_baremetal_ioctl(struct file *file,
 		unsigned int cmd, unsigned long arg)
 {
-	unsigned long val = *(unsigned long *)arg | 1 << 40;
+	unsigned long val;
+	unsigned long __user *argp = (unsigned long __user *)arg;
+	int err;
 #if defined(CONFIG_LX2160A_BAREMETAL)
 	unsigned long i, cluster, mask;
+#endif
+
+	err = copy_from_user(&val, argp, sizeof(val));
+	if (err)
+		return -EFAULT;
+
+	val |= ((unsigned long)1 << 40);
+
+#if defined(CONFIG_LX2160A_BAREMETAL)
 	val = *(unsigned long *)arg;
 
 	for (i = 0; i < 16; i++) {
