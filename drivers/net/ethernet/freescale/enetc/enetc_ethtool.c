@@ -1482,6 +1482,21 @@ static int enetc_set_rxfh(struct net_device *ndev,
 	return err;
 }
 
+static int enetc_reset_preempt(struct net_device *ndev, bool enable)
+{
+	struct enetc_ndev_priv *priv = netdev_priv(ndev);
+	u32 temp;
+
+	temp = enetc_rd(&priv->si->hw, ENETC_PTGCR);
+	if (temp & ENETC_PTGCR_TGE)
+		enetc_wr(&priv->si->hw, ENETC_PTGCR,
+			 temp & (~ENETC_PTGCR_TGPE));
+
+	enetc_configure_port_pmac(&priv->si->hw, enable);
+
+	return 0;
+}
+
 static void enetc_get_ringparam(struct net_device *ndev,
 				struct ethtool_ringparam *ring,
 				struct kernel_ethtool_ringparam *kernel_ring,
@@ -2117,7 +2132,7 @@ static void enetc_configure_port_pmac(struct enetc_hw *hw, bool enable)
 	enetc_port_wr(hw, ENETC_MMCSR, temp);
 }
 
-int enetc_preempt_reset(struct net_device *ndev, bool enable)
+int enetc_pmac_reset(struct net_device *ndev, bool enable)
 {
 	struct enetc_ndev_priv *priv = netdev_priv(ndev);
 	u32 temp;
@@ -2239,7 +2254,7 @@ static int enetc_set_preempt(struct net_device *ndev,
 		temp |= ENETC_MMCSR_VDIS;
 	enetc_port_wr(&priv->si->hw, ENETC_MMCSR, temp);
 
-	if (pt->disabled || pt->fp_lldp_verify)
+	if (pt->disabled)
 		enetc_configure_port_pmac(&priv->si->hw, 0);
 	else
 		enetc_configure_port_pmac(&priv->si->hw, 1);
@@ -2249,8 +2264,6 @@ static int enetc_set_preempt(struct net_device *ndev,
 		enetc_port_wr(&priv->si->hw, ENETC_PFPMR,
 			      temp & ~ENETC_PFPMR_PMACE);
 	}
-
-	priv->preemptable_verify = pt->fp_lldp_verify;
 
 	return 0;
 }
@@ -2265,11 +2278,6 @@ static int enetc_get_preempt(struct net_device *ndev,
 	if (!pt)
 		return -EINVAL;
 
-	if (enetc_port_rd(&priv->si->hw, ENETC_PFPMR) & ENETC_PFPMR_PMACE)
-		pt->fp_status = true;
-	else
-		pt->fp_status = false;
-
 	temp = enetc_port_rd(&priv->si->hw, ENETC_MMCSR);
 	if (!(temp & ENETC_MMCSR_VDIS) && (ENETC_MMCSR_GET_VSTS(temp) == 3))
 		pt->fp_active = true;
@@ -2277,6 +2285,11 @@ static int enetc_get_preempt(struct net_device *ndev,
 		pt->fp_active = true;
 	else
 		pt->fp_active = false;
+
+	if (temp & ENETC_MMCSR_ME)
+		pt->fp_status = true;
+	else
+		pt->fp_status = false;
 
 	pt->preemptible_queues_mask = 0;
 	for (i = 0; i < 8; i++)
@@ -2329,7 +2342,7 @@ const struct ethtool_ops enetc_pf_ethtool_ops = {
 	.get_mm_stats = enetc_get_mm_stats,
 	.set_preempt = enetc_set_preempt,
 	.get_preempt = enetc_get_preempt,
-	.reset_preempt = enetc_preempt_reset,
+	.reset_preempt = enetc_reset_preempt,
 };
 
 const struct ethtool_ops enetc4_ppm_ethtool_ops = {

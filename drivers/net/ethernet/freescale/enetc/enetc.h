@@ -566,8 +566,6 @@ struct enetc_ndev_priv {
 
 	struct ethtool_keee eee;
 	int page_order;
-
-	bool preemptable_verify;
 };
 
 #define ENETC_CBD(R, i)	(&(((struct enetc_cbd *)((R).bd_base))[i]))
