@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright 2025 NXP
+ */
+
+#include "imx943-evk.dts"
+
+/*
+ * SPI3 as master and i.MXRT1180 as target.
+ * MOSI: J47.8  <--> SPI3_SIN J44.10
+ * MISO: J47.10 <--> SPI3_SOUT J44.8
+ * SCLK: J47.12 <--> SPI3_SCK J44.12
+ * SS:   J47.6  <--> SPI3_PCS0 J44.6
+ * GND:   GND   <--> GND J44.14
+ */
+&lpspi3 {
+	cs-gpios = <&gpio2 8 GPIO_ACTIVE_LOW>;
+	num-cs = <2>;
+	pinctrl-0 = <&pinctrl_lpspi3>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	/delete-node/ spi@0;
+
+	#include "imxrt1180-hms-switch.dtsi"
+};
+
+&hmsdsa {
+	dsa,member = <1 0>;
+	spi-max-frequency = <12000000>;
+};
+
+&hmsdsa_port3 {
+	label = "cpu";
+	ethernet = <&enetc2>;
+};

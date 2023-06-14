@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: GPL-2.0
+//
+// Copyright 2023 NXP
+
+#include "imx8mp-evk.dts"
+
+/delete-node/&spidev1;
+
+&ecspi2 {
+	status = "okay";
+	#include "imxrt1180-hms-switch.dtsi"
+};
+
+&hmsdsa {
+	spi-max-frequency = <500000>;
+};
+
+&hmsdsa_port3 {
+	label = "cpu";
+	ethernet = <&eqos>;
+};
+
+&pinctrl_ecspi2 {
+	fsl,pins = <
+		MX8MP_IOMUXC_ECSPI2_SCLK__ECSPI2_SCLK		0x84
+		MX8MP_IOMUXC_ECSPI2_MOSI__ECSPI2_MOSI		0x84
+		MX8MP_IOMUXC_ECSPI2_MISO__ECSPI2_MISO		0x84
+	>;
+};

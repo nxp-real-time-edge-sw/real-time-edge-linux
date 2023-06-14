@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright 2024-2025 NXP
+ */
+
+#include "imx93-11x11-evk-dsa.dts"
+
+&hmsdsa_port3 {
+	label = "hms0p3";
+	/delete-property/ ethernet;
+};
+
+&hmsdsa_port4 {
+	label = "cpu";
+	ethernet = <&eqos>;
+	status = "okay";
+};
