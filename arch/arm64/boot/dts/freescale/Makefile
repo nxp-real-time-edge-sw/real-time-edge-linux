@@ -419,7 +419,8 @@ dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk.dtb \
 			  imx93-11x11-evk-uart-sharing-cm33.dtb \
 			  imx93-11x11-evk-baremetal.dtb \
 			  imx93-11x11-evk-ecat.dtb \
-			  imx93-11x11-evk-multicore-rtos.dtb
+			  imx93-11x11-evk-multicore-rtos.dtb \
+			  imx93-11x11-evk-dsa.dtb
 
 dtb-$(CONFIG_ARCH_MXC) += imx91-11x11-evk.dtb \
 			  imx91-11x11-evk-flexspi-m2.dtb imx91-11x11-evk-flexspi-nand-m2.dtb \
