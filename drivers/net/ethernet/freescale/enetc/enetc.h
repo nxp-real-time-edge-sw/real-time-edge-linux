@@ -396,6 +396,8 @@ struct enetc_ndev_priv {
 
 	struct work_struct	tx_onestep_tstamp;
 	struct sk_buff_head	tx_skbs;
+
+	bool fp_enabled_admin;
 };
 
 /* Messaging */
