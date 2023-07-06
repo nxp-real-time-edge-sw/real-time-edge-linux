@@ -2694,6 +2694,7 @@ static int vsc9959_port_set_preempt(struct ocelot *ocelot, int port,
 				    struct ethtool_fp *fpcmd)
 {
 	struct ocelot_port *ocelot_port = ocelot->ports[port];
+	struct felix *felix = ocelot_to_felix(ocelot);
 	int p_queues = fpcmd->preemptible_queues_mask;
 	int mm_fragsize, val;
 
@@ -2730,6 +2731,11 @@ static int vsc9959_port_set_preempt(struct ocelot *ocelot, int port,
 		       QSYS_PREEMPTION_CFG_P_QUEUES_M,
 		       QSYS_PREEMPTION_CFG,
 		       port);
+
+	ocelot_port->preemptable_prios = p_queues;
+
+	if (ocelot_port->taprio && felix->info->tas_guard_bands_update)
+		felix->info->tas_guard_bands_update(ocelot, port);
 
 	return 0;
 }
