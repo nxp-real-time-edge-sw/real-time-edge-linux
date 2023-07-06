@@ -2687,6 +2687,9 @@ static int vsc9959_port_set_preempt(struct ocelot *ocelot, int port,
 		       QSYS_PREEMPTION_CFG,
 		       port);
 
+	if (ocelot_port->taprio && ocelot->ops->tas_guard_bands_update)
+		ocelot->ops->tas_guard_bands_update(ocelot, port);
+
 	return 0;
 }
 
