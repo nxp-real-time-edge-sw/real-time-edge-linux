@@ -717,6 +717,7 @@ dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk.dtb \
 			  imx93-11x11-evk-ecat.dtb \
 			  imx93-11x11-evk-igh.dtb \
 			  imx93-11x11-evk-dpdk.dtb \
+			  imx93-11x11-evk-uart-sharing-cm33.dtb \
 			  imx93-11x11-evk-baremetal.dtb
 
 dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk-dsa.dtb \
