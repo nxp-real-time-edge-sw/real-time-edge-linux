@@ -597,11 +597,13 @@ static inline int enetc_set_psfp(struct net_device *ndev, bool en)
 void enetc_tsn_pf_init(struct net_device *netdev, struct pci_dev *pdev);
 void enetc_tsn_pf_deinit(struct net_device *netdev);
 void enetc_pspeed_set(struct enetc_ndev_priv *priv, int speed);
+void enetc_ptp_clock_update(void);
 
 #else
 
 #define enetc_tsn_pf_init(netdev, pdev) (void)0
 #define enetc_tsn_pf_deinit(netdev) (void)0
 #define enetc_pspeed_set(priv, speed) (void)0
+#define enetc_ptp_clock_update() (void)0
 
 #endif
