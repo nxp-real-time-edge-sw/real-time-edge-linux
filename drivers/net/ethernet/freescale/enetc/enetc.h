@@ -801,6 +801,7 @@ static inline int enetc_set_psfp(struct net_device *ndev, bool en)
 
 void enetc_tsn_pf_init(struct net_device *netdev, struct pci_dev *pdev);
 void enetc_tsn_pf_deinit(struct net_device *netdev);
+void enetc_ptp_clock_update(void);
 
 #else
 
@@ -812,4 +813,7 @@ static inline void enetc_tsn_pf_deinit(struct net_device *netdev)
 {
 }
 
+static inline void enetc_ptp_clock_update(void)
+{
+}
 #endif
