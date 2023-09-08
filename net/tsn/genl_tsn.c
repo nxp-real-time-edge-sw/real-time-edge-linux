@@ -3416,6 +3416,7 @@ static const struct genl_ops tsnnl_ops[] = {
 		.cmd		= TSN_CMD_PCPMAP_SET,
 		.doit		= tsn_pcpmap_set,
 		.flags		= GENL_ADMIN_PERM,
+		.validate	= GENL_DONT_VALIDATE_STRICT,
 	},
 };
 
