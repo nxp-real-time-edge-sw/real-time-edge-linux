@@ -681,7 +681,8 @@ dtb-$(CONFIG_ARCH_MXC) += imx93-9x9-qsb.dtb \
 			  imx93-9x9-qsb-baremetal.dtb \
 			  imx93-9x9-qsb-ld.dtb \
 			  imx93-9x9-qsb-rpmsg.dtb \
-			  imx93-9x9-qsb-uart-sharing-cm33.dtb
+			  imx93-9x9-qsb-uart-sharing-cm33.dtb \
+			  imx93-9x9-qsb-inmate.dtb imx93-9x9-qsb-root.dtb
 
 imx93-9x9-qsb-i3c-dtbs += imx93-9x9-qsb.dtb imx93-9x9-qsb-i3c.dtbo
 dtb-$(CONFIG_ARCH_MXC) += imx93-9x9-qsb-i3c.dtb
