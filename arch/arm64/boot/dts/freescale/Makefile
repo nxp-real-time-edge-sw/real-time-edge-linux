@@ -326,7 +326,8 @@ dtb-$(CONFIG_ARCH_MXC) += imx8qm-mek-revd-root.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8qxp-ai_ml.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8qxp-colibri-eval-v3.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8dxl-evk.dtb \
-			  imx8dxl-evk-enet0.dtb imx8dxl-evk-enet0-tja1100.dtb imx8dxl-evk-enet0-avb.dtb imx8dxl-evk-enet0-sja1105.dtb \
+			  imx8dxl-evk-enet0.dtb imx8dxl-evk-enet0-tja1100.dtb imx8dxl-evk-enet0-tja1100-avb.dtb \
+				imx8dxl-evk-enet0-avb.dtb imx8dxl-evk-enet0-sja1105.dtb \
 			  imx8dxl-evk-pcie-ep.dtb \
 			  imx8dxl-evk-lcdif.dtb \
 			  imx8dxl-evk-lpspi-slave.dtb \
