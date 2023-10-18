@@ -667,7 +667,9 @@ dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk.dtb \
 			  imx93-11x11-evk-rpmsg.dtb \
 			  imx93-11x11-evk-8mic-reve.dtb \
 			  imx93-11x11-evk-virtio-net-ca55.dtb \
-			  imx93-11x11-evk-virtio-net-cm33.dtb
+			  imx93-11x11-evk-virtio-net-cm33.dtb \
+			  imx93-11x11-evk-ecat.dtb \
+			  imx93-11x11-evk-multicore-rtos.dtb
 
 imx93-11x11-evk-boe-wxga-lvds-panel-dtbs := imx93-11x11-evk.dtb imx93-11x11-evk-boe-wxga-lvds-panel.dtbo
 dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk-boe-wxga-lvds-panel.dtb
