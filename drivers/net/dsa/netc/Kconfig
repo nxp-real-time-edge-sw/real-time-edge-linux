@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config NET_DSA_NETC
+	tristate "NXP NETC Ethernet switch family support"
+	depends on NET_DSA && SPI
+	select NET_DSA_TAG_NETC
+	help
+	  This is the driver for the NXP ENTC Ethernet switch family.
+	  These are managed over an SPI interface. Probing is handled
+	  based on OF bindings and so is the linkage to PHYLINK.
