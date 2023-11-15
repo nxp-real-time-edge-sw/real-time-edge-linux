@@ -36,8 +36,8 @@ static void usage(char *name)
 	printf("\tas_sender: true for as_sender, false for as_receiver\n");
 	printf("\tno_copy: specify if use no_copy version API in remote side\n");
 	printf("\tpacket_size: specify the packet size, the MAX value is 496\n");
-	printf("\ttest_time: specify the test period\n");
-	printf("\tsuch as: %s /dev/rpmsg-perf0 true true 64 60\n", name);
+	printf("\ttest_time: specify the test period in unit second\n");
+	printf("\tsuch as: %s /dev/rpmsg-perf<x> true true 64 60\n", name);
 }
 
 struct packet_header
