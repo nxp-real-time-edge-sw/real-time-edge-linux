@@ -1226,6 +1226,25 @@ static void taprio_sched_to_offload(struct net_device *dev,
 	offload->num_entries = i;
 }
 
+static void
+taprio_mqprio_qopt_reconstruct(struct net_device *dev,
+			       struct tc_mqprio_qopt_offload *mqprio)
+{
+	struct tc_mqprio_qopt *qopt = &mqprio->qopt;
+	int num_tc = netdev_get_num_tc(dev);
+	int tc, prio;
+
+	qopt->num_tc = num_tc;
+
+	for (prio = 0; prio <= TC_BITMASK; prio++)
+		qopt->prio_tc_map[prio] = netdev_get_prio_tc_map(dev, prio);
+
+	for (tc = 0; tc < num_tc; tc++) {
+		qopt->count[tc] = dev->tc_to_txq[tc].count;
+		qopt->offset[tc] = dev->tc_to_txq[tc].offset;
+	}
+}
+
 static int taprio_enable_offload(struct net_device *dev,
 				 struct taprio_sched *q,
 				 struct sched_gate_list *sched,
@@ -1262,6 +1281,7 @@ static int taprio_enable_offload(struct net_device *dev,
 		return -ENOMEM;
 	}
 	offload->enable = 1;
+	taprio_mqprio_qopt_reconstruct(dev, &offload->mqprio);
 	taprio_sched_to_offload(dev, sched, offload);
 
 	for (tc = 0; tc < TC_MAX_QUEUE; tc++)
