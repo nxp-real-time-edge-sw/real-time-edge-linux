@@ -21,7 +21,7 @@
 #define NETC_SPI_MSG_HEADER_SIZE	16
 #define NETC_SPI_MSG_PARAM_SIZE		12
 #define NETC_SPI_MSG_MAXLEN		4096
-#define NETC_SPI_MSG_RESPONSE_TIME	1000 // 100 /* us */
+#define NETC_SPI_MSG_RESPONSE_TIME	1000 /* us */
 
 #define NETC_CMD_DIR_SHIFT 31
 #define NETC_CMD_LEN_SHIFT 16
@@ -150,7 +150,7 @@ struct netc_cmd_fdb_del {
 struct netc_cmd_vlan {
 	uint16_t vid;
 	uint8_t port;  /* switch port 0, 1, 2 or 3 */
-	uint8_t reserved;
+	bool untagged;
 };
 
 /* data returned for NETC_CMD_PORT_PHYLINK_STATUS_GET */
@@ -276,8 +276,8 @@ int netc_fdb_entry_get(struct netc_private *priv,
 		       uint32_t entry_id, uint32_t *next_id);
 
 int netc_vlan_entry_add(struct netc_private *priv,
-			uint16_t vid, int port);
-int netc_vlan_entry_del(struct netc_private *priv, uint16_t vid);
+			uint16_t vid, int port, bool untagged);
+int netc_vlan_entry_del(struct netc_private *priv, uint16_t vid, int port);
 int netc_vlan_entry_get(struct netc_private *priv,
 			struct netc_vlan_entry *vlan,
 			uint32_t entry_id, uint32_t *next_id);

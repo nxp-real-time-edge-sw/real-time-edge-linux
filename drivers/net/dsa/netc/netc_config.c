@@ -173,7 +173,7 @@ int netc_port_dsa_del(struct netc_private *priv, int slave_port)
 }
 
 int netc_vlan_entry_add(struct netc_private *priv,
-			uint16_t vid, int port)
+			uint16_t vid, int port, bool untagged)
 {
 	struct device *dev = priv->ds->dev;
 	struct netc_cmd_vlan cmd_vlan = {0};
@@ -181,6 +181,7 @@ int netc_vlan_entry_add(struct netc_private *priv,
 
 	cmd_vlan.vid = vid;
 	cmd_vlan.port = (uint8_t)port;
+	cmd_vlan.untagged = untagged;
 
 	rc = netc_xfer_set_cmd(priv, NETC_CMD_VLAN_ADD,
 			      &cmd_vlan, sizeof(cmd_vlan));
@@ -192,13 +193,14 @@ int netc_vlan_entry_add(struct netc_private *priv,
 	return 0;
 }
 
-int netc_vlan_entry_del(struct netc_private *priv, uint16_t vid)
+int netc_vlan_entry_del(struct netc_private *priv, uint16_t vid, int port)
 {
 	struct device *dev = priv->ds->dev;
 	struct netc_cmd_vlan cmd_vlan = {0};
 	int rc;
 
 	cmd_vlan.vid = vid;
+	cmd_vlan.port = (uint8_t)port;
 
 	rc = netc_xfer_set_cmd(priv, NETC_CMD_VLAN_DEL,
 			       &cmd_vlan, sizeof(cmd_vlan));
