@@ -14,6 +14,8 @@
 #define ETH_P_NETC		0x88A8
 #define ETH_P_NETC_META		0x0008
 
+#define NETC_DEFAULT_VLAN	1
+
 #define IFH_TAG_TYPE_C		0
 #define IFH_TAG_TYPE_S		1
 
