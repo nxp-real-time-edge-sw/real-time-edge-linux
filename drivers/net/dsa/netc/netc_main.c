@@ -564,6 +564,7 @@ static int netc_mac_init(struct netc_private *priv)
 	mac = priv->config.mac;
 
 	dsa_switch_for_each_port(dp, ds) {
+		mac[dp->index].port = dp->index;
 		mac[dp->index].speed = 1000;
 		mac[dp->index].vlanid = 1;
 		mac[dp->index].drpuntag = false;
@@ -628,6 +629,7 @@ static int netc_dsa_init(struct netc_private *priv)
 static int netc_setup(struct dsa_switch *ds)
 {
 	struct netc_private *priv = ds->priv;
+	int port;
 	int rc;
 
 	rc = netc_config_setup(&priv->config);
@@ -638,6 +640,11 @@ static int netc_setup(struct dsa_switch *ds)
 
 	netc_mac_init(priv);
 	netc_dsa_init(priv);
+
+	for (port = 0; port < ds->num_ports; port++) {
+		priv->tag_8021q_pvid[port] = NETC_DEFAULT_VLAN;
+		priv->bridge_pvid[port] = NETC_DEFAULT_VLAN;
+	}
 
 	rc = netc_devlink_setup(ds);
 	if (rc < 0)
