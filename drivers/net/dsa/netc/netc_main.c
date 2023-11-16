@@ -402,6 +402,7 @@ static int netc_bridge_vlan_add(struct dsa_switch *ds, int port,
 {
 	struct netc_private *priv = ds->priv;
 	uint16_t flags = vlan->flags;
+	bool untagged = false;
 	int rc;
 
 	/* Be sure to deny the configuration done by tag_8021q. */
@@ -415,7 +416,10 @@ static int netc_bridge_vlan_add(struct dsa_switch *ds, int port,
 	if (dsa_is_cpu_port(ds, port) || dsa_is_dsa_port(ds, port))
 		flags = 0;
 
-	rc = netc_vlan_entry_add(priv, vlan->vid, port);
+	if (flags & BRIDGE_VLAN_INFO_UNTAGGED)
+		untagged = true;
+
+	rc = netc_vlan_entry_add(priv, vlan->vid, port, untagged);
 	if (rc)
 		return rc;
 
@@ -431,7 +435,7 @@ static int netc_bridge_vlan_del(struct dsa_switch *ds, int port,
 	struct netc_private *priv = ds->priv;
 	int rc;
 
-	rc = netc_vlan_entry_del(priv, vlan->vid);
+	rc = netc_vlan_entry_del(priv, vlan->vid, port);
 	if (rc)
 		return rc;
 
@@ -448,7 +452,7 @@ static int netc_8021q_vlan_add(struct dsa_switch *ds, int port,
 	struct netc_private *priv = ds->priv;
 	int rc;
 
-	rc = netc_vlan_entry_add(priv, vid, port);
+	rc = netc_vlan_entry_add(priv, vid, port, false);
 	if (rc)
 		return rc;
 
@@ -462,7 +466,7 @@ static int netc_8021q_vlan_del(struct dsa_switch *ds, int port, uint16_t vid)
 {
 	struct netc_private *priv = ds->priv;
 
-	return netc_vlan_entry_del(priv, vid);
+	return netc_vlan_entry_del(priv, vid, port);
 }
 
 static int netc_prechangeupper(struct dsa_switch *ds, int port,
