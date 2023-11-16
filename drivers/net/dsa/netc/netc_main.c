@@ -118,6 +118,10 @@ static int netc_fdb_add(struct dsa_switch *ds, int port,
 		}
 	}
 
+	/* Allow enough time between consecutive calls for adding FDB entry */
+	usleep_range(NETC_SPI_MSG_RESPONSE_TIME,
+		     NETC_SPI_MSG_RESPONSE_TIME * 10);
+
 	return netc_fdb_entry_add(priv, addr, vid, port);
 }
 
@@ -419,6 +423,10 @@ static int netc_bridge_vlan_add(struct dsa_switch *ds, int port,
 	if (vlan->flags & BRIDGE_VLAN_INFO_PVID)
 		priv->bridge_pvid[port] = vlan->vid;
 
+	/* Allow enough time between adding VLAN entry and setting PVID */
+	usleep_range(NETC_SPI_MSG_RESPONSE_TIME,
+		     NETC_SPI_MSG_RESPONSE_TIME * 10);
+
 	return netc_commit_pvid(ds, port);
 }
 
@@ -451,6 +459,10 @@ static int netc_8021q_vlan_add(struct dsa_switch *ds, int port,
 
 	if (flags & BRIDGE_VLAN_INFO_PVID)
 		priv->tag_8021q_pvid[port] = vid;
+
+	/* Allow enough time between adding VLAN entry and setting PVID */
+	usleep_range(NETC_SPI_MSG_RESPONSE_TIME,
+		     NETC_SPI_MSG_RESPONSE_TIME * 10);
 
 	return netc_commit_pvid(ds, port);
 }
