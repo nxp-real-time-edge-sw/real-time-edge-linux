@@ -870,7 +870,7 @@ static const struct of_device_id netc_dt_ids[] = {
 MODULE_DEVICE_TABLE(of, netc_dt_ids);
 
 static const struct spi_device_id netc_spi_ids[] = {
-	{ "netc" },
+	{ "imxrt1180-netc" },
 	{ },
 };
 MODULE_DEVICE_TABLE(spi, netc_spi_ids);
