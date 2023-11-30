@@ -40,6 +40,32 @@ int netc_is_vlan_configured(struct netc_private *priv, uint16_t vid)
 	return -1;
 }
 
+static bool vid_is_netc_dsa_8021q(struct dsa_switch *ds, u16 vid)
+{
+	int port;
+	struct dsa_port *dp;
+	unsigned int bridge_num;
+	u16 standalone_vid, bridge_vid;
+
+	for (port = 0; port < ds->num_ports; port++) {
+		dp = dsa_to_port(ds, port);
+		standalone_vid = dsa_tag_8021q_standalone_vid(dp);
+
+		if (vid == standalone_vid)
+			return true;
+
+		if (dp->bridge) {
+			bridge_num = dsa_port_bridge_num_get(dp);
+			bridge_vid = dsa_tag_8021q_bridge_vid(bridge_num);
+
+			if (vid == bridge_vid)
+				return true;
+		}
+	}
+
+	return false;
+}
+
 static int netc_drop_untagged(struct dsa_switch *ds, int port, bool drop)
 {
 	struct netc_private *priv = ds->priv;
@@ -177,7 +203,7 @@ static int netc_fdb_dump(struct dsa_switch *ds, int port,
 		 */
 		if (fdb.port_map & BIT(port)) {
 			/* Need to hide the dsa_8021q VLANs from the user. */
-			if (vid_is_dsa_8021q(fdb.vid))
+			if (vid_is_netc_dsa_8021q(ds, fdb.vid))
 				fdb.vid = 0;
 
 			rc = cb(fdb.mac_addr, fdb.vid, fdb.dynamic, data);
@@ -403,9 +429,9 @@ static int netc_bridge_vlan_add(struct dsa_switch *ds, int port,
 	int rc;
 
 	/* Be sure to deny the configuration done by tag_8021q. */
-	if (vid_is_dsa_8021q(vlan->vid)) {
+	if (vid_is_netc_dsa_8021q(ds, vlan->vid)) {
 		NL_SET_ERR_MSG_MOD(extack,
-				   "Range 3072-4095 reserved for dsa_8021q operation");
+				   "VLAN ID 3072-3076 & 3088 reserved for dsa_8021q operation");
 		return -EBUSY;
 	}
 
