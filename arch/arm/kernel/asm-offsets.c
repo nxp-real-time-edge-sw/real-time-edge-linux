@@ -2,7 +2,7 @@
 /*
  * Copyright (C) 1995-2003 Russell King
  *               2001-2002 Keith Owens
- *     
+ *
  * Generate definitions needed by assembly language modules.
  * This code generates raw asm output which is post-processed to extract
  * and format the required data.
@@ -43,6 +43,7 @@ int main(void)
   BLANK();
   DEFINE(TI_FLAGS,		offsetof(struct thread_info, flags));
   DEFINE(TI_PREEMPT,		offsetof(struct thread_info, preempt_count));
+  DEFINE(TI_PREEMPT_LAZY,	offsetof(struct thread_info, preempt_lazy_count));
   DEFINE(TI_ADDR_LIMIT,		offsetof(struct thread_info, addr_limit));
   DEFINE(TI_CPU,		offsetof(struct thread_info, cpu));
   DEFINE(TI_CPU_DOMAIN,		offsetof(struct thread_info, cpu_domain));
@@ -171,5 +172,5 @@ int main(void)
   DEFINE(KEXEC_INDIR_PAGE,	offsetof(struct kexec_relocate_data, kexec_indirection_page));
   DEFINE(KEXEC_MACH_TYPE,	offsetof(struct kexec_relocate_data, kexec_mach_type));
   DEFINE(KEXEC_R2,		offsetof(struct kexec_relocate_data, kexec_r2));
-  return 0; 
+  return 0;
 }
