@@ -209,7 +209,7 @@
 		VA-supply = <&reg_audio_pwr>;
 		VD-supply = <&reg_audio_pwr>;
 		VLS-supply = <&reg_audio_pwr>;
-		VLC-supply = <&reg_audio_pwr>;
+		VLC-supply = <&reg_exp_sel>;
 		reset-gpio = <&gpio2 25 GPIO_ACTIVE_LOW>;
 		status = "okay";
 	};
