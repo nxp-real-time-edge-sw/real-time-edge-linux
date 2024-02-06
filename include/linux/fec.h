@@ -51,7 +51,8 @@ struct avb_desc {
 	u16 offset;
 	u16 len;
 	u32 ts;
-	u32 flags;
+	u32 flags:28;
+	u32 pool_type:4;
 	u32 private; /* Will be used for saving userspace private value on TX and esc hw descriptor value on RX */
 };
 
