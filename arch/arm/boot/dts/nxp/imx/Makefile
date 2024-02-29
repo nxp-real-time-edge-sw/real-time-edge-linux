@@ -395,6 +395,7 @@ dtb-$(CONFIG_SOC_IMX6UL) += \
 	imx6ul-var-som-concerto.dtb \
 	imx6ull-14x14-evk.dtb \
 	imx6ull-14x14-evk-ecat.dtb \
+	imx6ull-14x14-evk-igh.dtb \
 	imx6ull-14x14-evk-lpuart.dtb \
 	imx6ull-14x14-evk-avb.dtb \
 	imx6ull-14x14-evk-avb-mcr.dtb \
