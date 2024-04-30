@@ -528,28 +528,6 @@ static int netc_prechangeupper(struct dsa_switch *ds, int port,
 	return 0;
 }
 
-#define work_to_xmit_work(w) \
-		container_of((w), struct netc_deferred_xmit_work, work)
-
-static void netc_port_deferred_xmit(struct kthread_work *work)
-{
-	struct netc_deferred_xmit_work *xmit_work = work_to_xmit_work(work);
-	struct sk_buff *clone, *skb = xmit_work->skb;
-	struct dsa_switch *ds = xmit_work->dp->ds;
-	int port = xmit_work->dp->index;
-
-	clone = NETC_SKB_CB(skb)->clone;
-
-	/* Transfer skb to the host port. */
-	dsa_enqueue_skb(skb, dsa_to_port(ds, port)->slave);
-
-	/* The clone, if there, was made by dsa_skb_tx_timestamp */
-	if (clone)
-		netc_ptp_txtstamp_skb(ds, port, clone);
-
-	kfree(xmit_work);
-}
-
 static int netc_connect_tag_protocol(struct dsa_switch *ds,
 					enum dsa_tag_protocol proto)
 {
@@ -560,7 +538,7 @@ static int netc_connect_tag_protocol(struct dsa_switch *ds,
 		return -EPROTONOSUPPORT;
 
 	tagger_data = netc_tagger_data(ds);
-	tagger_data->xmit_work_fn = netc_port_deferred_xmit;
+	tagger_data->meta_tstamp_handler = netc_process_meta_tstamp;
 
 	return 0;
 }
@@ -672,9 +650,15 @@ static int netc_setup(struct dsa_switch *ds)
 		priv->bridge_pvid[port] = NETC_DEFAULT_VLAN;
 	}
 
+	rc = netc_ptp_clock_register(ds);
+	if (rc < 0) {
+		dev_err(ds->dev, "Failed to register PTP clock: %d\n", rc);
+		goto out_config_free;
+	}
+
 	rc = netc_devlink_setup(ds);
 	if (rc < 0)
-		goto out_config_free;
+		goto out_ptp_teardown;
 
 	rtnl_lock();
 	rc = dsa_tag_8021q_register(ds, htons(ETH_P_8021Q));
@@ -707,6 +691,8 @@ static int netc_setup(struct dsa_switch *ds)
 
 out_devlink_teardown:
 	netc_devlink_teardown(ds);
+out_ptp_teardown:
+	netc_ptp_clock_unregister(ds);
 out_config_free:
 	netc_config_free(&priv->config);
 
@@ -722,6 +708,7 @@ static void netc_teardown(struct dsa_switch *ds)
 	rtnl_unlock();
 
 	netc_devlink_teardown(ds);
+	netc_ptp_clock_unregister(ds);
 	netc_config_free(&priv->config);
 }
 
@@ -746,6 +733,10 @@ static const struct dsa_switch_ops netc_switch_ops = {
 	.port_vlan_filtering	= netc_vlan_filtering,
 	.port_vlan_add		= netc_bridge_vlan_add,
 	.port_vlan_del		= netc_bridge_vlan_del,
+	.port_hwtstamp_get	= netc_hwtstamp_get,
+	.port_hwtstamp_set	= netc_hwtstamp_set,
+	.port_rxtstamp		= netc_port_rxtstamp,
+	.port_txtstamp		= netc_port_txtstamp,
 	.devlink_info_get	= netc_devlink_info_get,
 	.tag_8021q_vlan_add	= netc_8021q_vlan_add,
 	.tag_8021q_vlan_del	= netc_8021q_vlan_del,
@@ -849,6 +840,7 @@ static int netc_probe(struct spi_device *spi)
 	priv->ds = ds;
 
 	mutex_init(&priv->mgmt_lock);
+	spin_lock_init(&priv->ts_id_lock);
 
 	rc = netc_parse_dt(priv);
 	if (rc < 0) {
