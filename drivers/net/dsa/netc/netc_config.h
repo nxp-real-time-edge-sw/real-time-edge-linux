@@ -60,6 +60,16 @@ enum netc_cmd {
 	NETC_CMD_FORWARD_MASK_SET,
 
 	NETC_CMD_PTP_SYNC_SET = 0x2000,
+	NETC_CMD_TIMER_CUR_SET,
+	NETC_CMD_TIMER_CUR_GET,
+	NETC_CMD_TIMER_RATE_SET,
+	NETC_CMD_TIMER_RATE_GET,
+	NETC_CMD_TIMER_ADJTIME_SET,
+	NETC_CMD_TIMER_ADJFINE_SET,
+	NETC_CMD_TIMER_PPS_START,
+	NETC_CMD_TIMER_PPS_STOP,
+	NETC_CMD_TIMER_EXTTS_START,
+	NETC_CMD_TIMER_EXTTS_STOP,
 
 	NETC_CMD_QBV_SET = 0x3000,
 	NETC_CMD_QBV_GET,
@@ -167,7 +177,7 @@ struct netc_cmd_read_param {
 	uint32_t id;
 };
 
-/* command  data for NETC_CMD_REG_SET */
+/* command data for NETC_CMD_REG_SET */
 struct netc_cmd_reg_cmd {
 	uint32_t reg;
 	uint32_t value;
@@ -194,6 +204,12 @@ struct netc_cmd_vlan_dump {
 	uint32_t port_map;
 	/* non-zero means there are remaining entries, 0 means no more entries */
 	uint32_t resume_entry_id;
+};
+
+/* command param for NETC_CMD_TIMER_PPS_START */
+struct netc_cmd_timer_pps {
+	uint64_t pin_start;
+	uint32_t pin_duration32;
 };
 
 struct netc_cmd_port_ethtool_stats {

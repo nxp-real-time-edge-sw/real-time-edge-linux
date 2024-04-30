@@ -6,12 +6,15 @@
 #ifndef _NETC_H
 #define _NETC_H
 
+#include <linux/dsa/8021q.h>
+#include <linux/dsa/netc.h>
+#include <linux/mutex.h>
 #include <linux/ptp_clock_kernel.h>
 #include <linux/timecounter.h>
-#include <linux/dsa/8021q.h>
 #include <net/dsa.h>
-#include <linux/mutex.h>
+
 #include "netc_config.h"
+#include "netc_ptp.h"
 
 struct netc_private;
 
@@ -46,7 +49,6 @@ struct netc_private {
 	bool fixed_link[NETC_MAX_NUM_PORTS];
 	unsigned long ucast_egress_floods;
 	unsigned long bcast_egress_floods;
-	unsigned long hwts_tx_en;
 
 	size_t max_xfer_len;
 	struct spi_device *spidev;
@@ -59,6 +61,13 @@ struct netc_private {
 	struct mutex mgmt_lock;
 
 	struct devlink_region **regions;
+
+	/* PTP two-step TX timestamp ID, and its serialization lock */
+	spinlock_t ts_id_lock;
+	u32 ts_id;
+	unsigned long hwts_tx_en;
+	unsigned long hwts_rx_en;
+	struct netc_ptp_data ptp_data;
 };
 
 int netc_vlan_filtering(struct dsa_switch *ds, int port, bool enabled,
@@ -76,7 +85,8 @@ int netc_devlink_info_get(struct dsa_switch *ds,
 int netc_xfer_cmd(const struct netc_private *priv,
 		  enum netc_spi_rw_mode rw, enum netc_cmd cmd,
 		  void *param, size_t param_len,
-		  void *resp, size_t resp_len);
+		  void *resp, size_t resp_len,
+		  struct ptp_system_timestamp *ptp_sts);
 int netc_xfer_set_cmd(const struct netc_private *priv,
 		      enum netc_cmd cmd,
 		      void *param, size_t param_len);
@@ -88,6 +98,12 @@ int netc_xfer_write_reg(const struct netc_private *priv,
 			uint32_t reg, uint32_t value);
 int netc_xfer_read_reg(const struct netc_private *priv,
 		       uint32_t reg, uint32_t *value);
+int netc_xfer_write_u64(const struct netc_private *priv,
+			enum netc_cmd cmd, uint64_t value,
+			struct ptp_system_timestamp *ptp_sts);
+int netc_xfer_read_u64(const struct netc_private *priv,
+		       enum netc_cmd cmd, uint64_t *value,
+		       struct ptp_system_timestamp *ptp_sts);
 
 /* From netc_ethtool.c */
 void netc_get_ethtool_stats(struct dsa_switch *ds, int port, uint64_t *data);
