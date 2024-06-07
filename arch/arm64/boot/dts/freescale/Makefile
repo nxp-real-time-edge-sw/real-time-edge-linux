@@ -664,6 +664,7 @@ dtb-$(CONFIG_ARCH_MXC) += imx93-14x14-evk.dtb \
 			  imx93-14x14-evk-i3c.dtb imx93-14x14-evk-8mic-reve.dtb \
 			  imx93-14x14-evk-virtio-net-ca55.dtb \
 			  imx93-14x14-evk-virtio-net-cm33.dtb \
+			  imx93-14x14-evk-uart-sharing-cm33.dtb \
 			  imx93-14x14-evk-multicore-rtos.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk.dtb \
 			  imx93-jailhouse-inmate.dtb imx93-11x11-evk-root.dtb imx93-11x11-evk-flexio-i2c.dtb \
