@@ -76,9 +76,13 @@ enum netc_cmd {
 	NETC_CMD_QBU_SET,
 	NETC_CMD_QBU_GET,
 	NETC_CMD_QCI_SET,
+	NETC_CMD_QCI_DEL,
 	NETC_CMD_QCI_GET,
-	NETC_CMD_8021CB_SET,
-	NETC_CMD_8021CB_GET,
+	NETC_CMD_FRER_SG_SET,
+	NETC_CMD_FRER_SR_SET,
+	NETC_CMD_FRER_DEL,
+	NETC_CMD_STREAMID_SET,
+	NETC_CMD_STREAMID_DEL,
 
 	NETC_CMD_REG_SET = 0x4000,
 	NETC_CMD_REG_GET,
@@ -222,6 +226,129 @@ struct netc_ptp_ctl_param {
 	uint8_t clock_id;
 };
 
+/* stream identification */
+typedef enum {
+	STREAMID_RESERVED = 0,
+	/* Null Stream identification */
+	STREAMID_NULL,
+	/* Source MAC and VLAN Stream identification */
+	STREAMID_SMAC_VLAN,
+	/* Active Destination MAC and VLAN stream identification */
+	STREAMID_DMAC_VLAN,
+	/* IP stream identification */
+	STREAMID_IP,
+} tsn_cb_streamid_type;
+
+enum netc_action_type {
+        NETC_STREAM_NULL,
+        NETC_STREAM_FRER_SEQGEN,
+        NETC_STREAM_FRER_SEQREC,
+        NETC_STREAM_QCI,
+};
+
+struct netc_stream {
+	struct list_head list;
+	unsigned long id;
+	int port_mask;
+	uint8_t mac[ETH_ALEN];
+	uint16_t vid;
+	tsn_cb_streamid_type type;
+	enum netc_action_type action;
+	uint16_t handle;
+	s8 prio;
+	bool update;
+};
+
+typedef enum {
+        NETC_SEQI_RTAG = 1,
+        NETC_SEQI_HSR_SEQ_TAG,
+        NETC_SEQI_PRP_SEQ_TRAILER,
+} netc_encapsulation_t;
+
+typedef enum {
+        NETC_SEQR_VECTOR = 0,
+        NETC_SEQR_MATCH,
+} netc_seqr_algorithm_t;
+
+struct netc_stream_seqgen {
+	netc_encapsulation_t enc;
+	uint8_t	iport_mask;
+};
+
+struct netc_stream_seqrec {
+	netc_encapsulation_t enc;
+	netc_seqr_algorithm_t alg;
+	uint16_t reset_timeout;
+	uint8_t his_len;
+	uint8_t rtag_pop_en;
+	uint8_t	eport_mask;
+};
+
+enum tc_frer_tag_action {
+        FRER_TAG_NULL,
+        FRER_TAG_PUSH,
+        FRER_TAG_POP,
+};
+
+struct netc_stream_qci {
+       uint32_t     maxsdu;
+};
+
+struct netc_stream_filter {
+	struct list_head list;
+	uint16_t stream_handle;
+	union {
+		struct netc_stream_seqgen seqgen;
+		struct netc_stream_seqrec seqrec;
+		struct netc_stream_qci qci;
+	};
+};
+
+/* command data for NETC_CMD_STREAMID_SET */
+struct netc_cmd_nullstreamid {
+	uint8_t mac_addr[ETH_ALEN];
+	uint16_t vid;
+	uint16_t handle;
+	uint8_t type;
+	uint8_t port_mask;
+};
+
+/* command data for NETC_CMD_FRER_SG_SET */
+struct netc_cmd_frer_sg {
+	uint16_t stream_handle;
+	uint8_t encap;
+	uint8_t	iport_mask;
+};
+
+/* command data for NETC_CMD_FRER_SR_SET */
+struct netc_cmd_frer_sr {
+	uint16_t stream_handle;
+	uint16_t reset_timeout;
+	uint8_t his_len;
+	uint8_t encap;
+	uint8_t alg;
+	uint8_t rtag_pop_en;
+	uint8_t	eport_mask;
+};
+
+/* command data for NETC_CMD_FRER_DEL */
+struct netc_cmd_frer_del {
+	uint16_t	stream_handle;
+	uint8_t		port_mask;
+};
+
+/* command data for NETC_CMD_QCI_SET */
+struct netc_cmd_qci_set {
+	uint16_t	stream_handle;
+	uint32_t	maxsdu;
+};
+
+/* command data for NETC_CMD_QCI_DEL */
+struct netc_cmd_qci_del {
+	uint16_t	stream_handle;
+	uint8_t		port_mask;
+};
+
 struct netc_cmd_port_ethtool_stats {
 	uint64_t values[NETC_ETHTOOL_STATS_NUM_MAX];
 };
@@ -310,5 +437,21 @@ int netc_vlan_entry_get(struct netc_private *priv,
 
 int netc_config_setup(struct netc_config *config);
 void netc_config_free(struct netc_config *config);
+
+int netc_streamid_set(struct netc_private *priv, int port_mask, uint16_t handle,
+		const unsigned char *mac, uint16_t vid, tsn_cb_streamid_type type);
+int netc_streamid_del(struct netc_private *priv, uint16_t handle);
+
+int netc_frer_seqgen(struct netc_private *priv,
+		struct netc_stream_filter *filter);
+int netc_frer_seqrec(struct netc_private *priv,
+		struct netc_stream_filter *filter);
+int netc_frer_del(struct netc_private *priv,
+		uint16_t handle, uint32_t port);
+
+int netc_qci_set(struct netc_private *priv,
+		struct netc_stream_filter *filter);
+int netc_qci_del(struct netc_private *priv,
+		uint16_t handle, uint32_t port);
 
 #endif /* _NETC_CONFIG_H */

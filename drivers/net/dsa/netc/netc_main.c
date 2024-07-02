@@ -543,6 +543,342 @@ static int netc_connect_tag_protocol(struct dsa_switch *ds,
 	return 0;
 }
 
+static int netc_stream_identify(struct flow_cls_offload *f, struct netc_stream *stream)
+{
+	struct flow_rule *rule = flow_cls_offload_flow_rule(f);
+	struct flow_dissector *dissector = rule->match.dissector;
+
+	if (dissector->used_keys &
+			~(BIT(FLOW_DISSECTOR_KEY_CONTROL) |
+              BIT(FLOW_DISSECTOR_KEY_BASIC) |
+              BIT(FLOW_DISSECTOR_KEY_VLAN) |
+              BIT(FLOW_DISSECTOR_KEY_ETH_ADDRS)))
+                return -EOPNOTSUPP;
+
+        if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_ETH_ADDRS)) {
+                struct flow_match_eth_addrs match;
+
+                flow_rule_match_eth_addrs(rule, &match);
+		if (is_zero_ether_addr(match.mask->src) &&
+			!is_zero_ether_addr(match.mask->dst)) {
+			ether_addr_copy(stream->mac, match.key->dst);
+			stream->type = STREAMID_NULL;
+		} else if (!is_zero_ether_addr(match.mask->src) &&
+			is_zero_ether_addr(match.mask->dst)) {
+			ether_addr_copy(stream->mac, match.key->src);
+			stream->type = STREAMID_SMAC_VLAN;
+		} else
+                        return -EOPNOTSUPP;
+        } else {
+                return -EOPNOTSUPP;
+        }
+
+	if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_VLAN)) {
+		struct flow_match_vlan match;
+
+		flow_rule_match_vlan(rule, &match);
+		if (match.mask->vlan_priority)
+			stream->prio = match.key->vlan_priority;
+		else
+			stream->prio = -1;
+
+		if (!match.mask->vlan_id)
+			return -EOPNOTSUPP;
+		stream->vid = match.key->vlan_id;
+	} else {
+		stream->vid = 0;
+	}
+
+        stream->id = f->cookie;
+
+	return 0;
+}
+
+static struct netc_stream *
+netc_stream_table_lookup(struct list_head *stream_list,
+			    struct netc_stream *stream)
+{
+	struct netc_stream *tmp;
+
+	list_for_each_entry(tmp, stream_list, list)
+		if (ether_addr_equal(tmp->mac, stream->mac) &&
+		    tmp->vid == stream->vid && tmp->port_mask == stream->port_mask &&
+		    tmp->type == stream->type)
+			return tmp;
+
+	return NULL;
+}
+
+static int netc_stream_handle_alloc(struct netc_private *priv)
+{
+	int i;
+	for (i = 0; i < MAX_SSIDS; i++) {
+		if (priv->psfp.ssids[i] == 0) {
+			priv->psfp.ssids[i] = 1;
+			priv->psfp.num_ssids++;
+			return i;
+		}
+	}
+
+	return -EINVAL;
+}
+
+static int netc_stream_handle_del(struct netc_private *priv, u32 handle)
+{
+	if (handle < 0 || handle > MAX_SSIDS)
+		return -EINVAL;
+
+	if (priv->psfp.ssids[handle] == 1) {
+		priv->psfp.ssids[handle] = 0;
+		priv->psfp.num_ssids--;
+	}
+
+	return 0;
+}
+
+static int netc_stream_table_add(struct netc_private *priv, struct list_head *stream_list,
+		struct netc_stream *stream, struct netlink_ext_ack *extack)
+{
+        struct netc_stream *stream_entry;
+        int rc;
+
+        stream_entry = kmemdup(stream, sizeof(*stream_entry), GFP_KERNEL);
+        if (!stream_entry)
+                return -ENOMEM;
+
+	if (stream->update) {
+		rc = netc_streamid_set(priv, stream_entry->port_mask, stream_entry->handle,
+				stream_entry->mac, stream_entry->vid, stream_entry->type);
+		if (rc) {
+			kfree(stream_entry);
+			return rc;
+		}
+	}
+
+        list_add_tail(&stream_entry->list, stream_list);
+
+        return 0;
+}
+
+static struct netc_stream *
+netc_stream_table_get(struct list_head *stream_list, unsigned long id)
+{
+	struct netc_stream *tmp;
+
+	list_for_each_entry(tmp, stream_list, list)
+		if (tmp->id == id)
+			return tmp;
+
+	return NULL;
+}
+
+static int netc_cls_flower_add(struct dsa_switch *ds, int port,
+			       struct flow_cls_offload *f, bool ingress)
+{
+	struct netc_private *priv = ds->priv;
+	struct netlink_ext_ack *extack = f->common.extack;
+	const struct flow_action_entry *a;
+	struct netc_stream stream = {.action = NETC_STREAM_NULL};
+	struct netc_stream *stream_entry;
+	struct netc_psfp_list *psfp;
+	struct netc_stream_filter filter = {0};
+	int i, rc;
+	uint32_t handle;
+
+	psfp = &priv->psfp;
+
+	rc = netc_stream_identify(f, &stream);
+	if (rc) {
+                NL_SET_ERR_MSG_MOD(extack, "Only can match on VID and dest MAC");
+                return rc;
+        }
+
+	mutex_lock(&psfp->lock);
+
+	flow_action_for_each(i, a, &f->rule->action) {
+		switch (a->id) {
+		case FLOW_ACTION_FRER:
+			switch (a->frer.tag_action) {
+				case FRER_TAG_PUSH:
+					stream.port_mask = BIT(port);
+					stream.action = NETC_STREAM_FRER_SEQGEN;
+					filter.seqgen.enc = a->frer.tag_type;
+					filter.seqgen.iport_mask |= BIT(port);
+					break;
+				case FRER_TAG_POP:
+					stream.port_mask = 0xF & ~BIT(port);
+					stream.action = NETC_STREAM_FRER_SEQREC;
+					filter.seqrec.enc = a->frer.tag_type;
+					filter.seqrec.eport_mask |= BIT(port);
+					filter.seqrec.alg = a->frer.rcvy_alg;
+					filter.seqrec.his_len = a->frer.rcvy_history_len;
+					filter.seqrec.reset_timeout = a->frer.rcvy_reset_msec;
+					break;
+				default:
+					NL_SET_ERR_MSG_MOD(extack,
+							"Non-supported tag action");
+					rc = -EOPNOTSUPP;
+					goto err;
+			}
+			break;
+		case FLOW_ACTION_POLICE:
+			stream.port_mask = BIT(port);
+			stream.action = NETC_STREAM_QCI;
+			if (a->police.mtu < 0) {
+				NL_SET_ERR_MSG_MOD(extack,
+						"invalided maxsdu size");
+				rc = -EINVAL;
+				goto err;
+			}
+			filter.qci.maxsdu = a->police.mtu;
+			break;
+		default:
+			rc = -EOPNOTSUPP;
+			goto err;
+		}
+	}
+
+	stream_entry = netc_stream_table_lookup(&psfp->stream_list, &stream);
+	if (stream_entry) {
+		stream.handle = stream_entry->handle;
+		stream.update = false;
+	} else {
+		handle = netc_stream_handle_alloc(priv);
+		stream.handle = handle;
+		stream.update = true;
+	}
+
+	rc = netc_stream_table_add(priv, &psfp->stream_list,
+			&stream, extack);
+	if (rc) {
+                NL_SET_ERR_MSG_MOD(extack, "Failed to add new stream table");
+		goto err;
+	}
+
+	filter.stream_handle = stream.handle;
+
+	switch (stream.action) {
+		case NETC_STREAM_FRER_SEQGEN:
+			rc = netc_frer_seqgen(priv, &filter);
+			if (rc) {
+				goto err;
+			}
+			break;
+		case NETC_STREAM_FRER_SEQREC:
+			rc = netc_frer_seqrec(priv, &filter);
+			if (rc) {
+				goto err;
+			}
+			break;
+		case NETC_STREAM_QCI:
+			rc = netc_qci_set(priv, &filter);
+			if (rc) {
+				goto err;
+			}
+			break;
+		default:
+			mutex_unlock(&psfp->lock);
+			return -EOPNOTSUPP;
+	}
+
+	mutex_unlock(&psfp->lock);
+
+	return 0;
+err:
+	mutex_unlock(&psfp->lock);
+
+	return rc;
+}
+
+static int netc_cls_flower_del(struct dsa_switch *ds, int port,
+			       struct flow_cls_offload *cls, bool ingress)
+{
+	struct netc_private *priv = ds->priv;
+	struct netc_stream *stream, *tmp;
+	struct netc_psfp_list *psfp;
+	u32 stream_handle;
+	int rc;
+
+	psfp = &priv->psfp;
+
+	mutex_lock(&psfp->lock);
+
+	stream = netc_stream_table_get(&psfp->stream_list, cls->cookie);
+	if (!stream) {
+		mutex_unlock(&psfp->lock);
+		return -EEXIST;
+	}
+
+	stream_handle = stream->handle;
+
+	switch (stream->action) {
+	case NETC_STREAM_FRER_SEQGEN:
+	case NETC_STREAM_FRER_SEQREC:
+		rc = netc_frer_del(priv, stream_handle, port);
+		if (rc)
+			goto err;
+		break;
+	case NETC_STREAM_QCI:
+		rc = netc_qci_del(priv, stream_handle, port);
+		if (rc)
+			goto err;
+		break;
+	default:
+		mutex_unlock(&psfp->lock);
+		return -EOPNOTSUPP;
+	}
+
+	list_del(&stream->list);
+
+	tmp = netc_stream_table_lookup(&psfp->stream_list, stream);
+	if (!tmp) {
+		rc = netc_streamid_del(priv, stream->handle);
+		if (rc)
+			goto err;
+		rc = netc_stream_handle_del(priv, stream->handle);
+		if (rc)
+			goto err;
+	}
+
+	kfree(stream);
+	mutex_unlock(&psfp->lock);
+
+	return 0;
+
+err:
+	mutex_unlock(&psfp->lock);
+	return rc;
+}
+
+static int netc_cls_flower_stats(struct dsa_switch *ds, int port,
+			       struct flow_cls_offload *cls, bool ingress)
+{
+	dev_dbg(ds->dev, "Not support query flower stats!\n");
+	return 0;
+}
+
+static int netc_port_setup_tc(struct dsa_switch *ds, int port,
+			       enum tc_setup_type type,
+			       void *type_data)
+{
+	switch (type) {
+	case TC_QUERY_CAPS:
+		dev_info(ds->dev, "TC_QUERY_CAPS not support yet!\n");
+		return -EOPNOTSUPP;
+	case TC_SETUP_QDISC_TAPRIO:
+		dev_info(ds->dev, "TC_SETUP_QDISC_TAPRIO not support yet!\n");
+		return -EOPNOTSUPP;
+	case TC_SETUP_QDISC_CBS:
+		dev_info(ds->dev, "TC_SETUP_QDISC_CBS not support yet!\n");
+		return -EOPNOTSUPP;
+	case TC_SETUP_QDISC_MQPRIO:
+		dev_info(ds->dev, "TC_SETUP_QDISC_MQPRIO not support yet!\n");
+		return -EOPNOTSUPP;
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
 static int netc_change_mtu(struct dsa_switch *ds, int port, int new_mtu)
 {
 	struct netc_private *priv = ds->priv;
@@ -741,6 +1077,10 @@ static const struct dsa_switch_ops netc_switch_ops = {
 	.tag_8021q_vlan_add	= netc_8021q_vlan_add,
 	.tag_8021q_vlan_del	= netc_8021q_vlan_del,
 	.port_prechangeupper	= netc_prechangeupper,
+	.cls_flower_add		= netc_cls_flower_add,
+	.cls_flower_del		= netc_cls_flower_del,
+	.cls_flower_stats	= netc_cls_flower_stats,
+	.port_setup_tc		= netc_port_setup_tc,
 };
 
 static const struct of_device_id netc_dt_ids[];
@@ -847,6 +1187,12 @@ static int netc_probe(struct spi_device *spi)
 		dev_err(ds->dev, "Failed to parse DT: %d\n", rc);
 		return rc;
 	}
+
+	//for tc filter
+	INIT_LIST_HEAD(&priv->psfp.stream_list);
+	memset(priv->psfp.ssids, 0, sizeof(priv->psfp.ssids));
+	priv->psfp.num_ssids = 0;
+	mutex_init(&priv->psfp.lock);
 
 	return dsa_register_switch(priv->ds);
 }

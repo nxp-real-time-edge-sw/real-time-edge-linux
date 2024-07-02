@@ -41,6 +41,15 @@ struct netc_info {
 	bool can_limit_mcast_flood;
 };
 
+struct netc_psfp_list {
+	struct list_head stream_list;
+#define MAX_SSIDS 512
+	uint16_t ssids[MAX_SSIDS];
+	int num_ssids;
+	/* Serialize access to the lists */
+	struct mutex lock;
+};
+
 struct netc_private {
 	const struct netc_info *info;
 	struct netc_config config;
@@ -68,6 +77,8 @@ struct netc_private {
 	unsigned long hwts_tx_en;
 	unsigned long hwts_rx_en;
 	struct netc_ptp_data ptp_data;
+
+	struct netc_psfp_list psfp;
 };
 
 int netc_vlan_filtering(struct dsa_switch *ds, int port, bool enabled,
