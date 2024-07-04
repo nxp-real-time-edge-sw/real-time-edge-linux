@@ -94,10 +94,25 @@
  */
 #define NETC_TX_HEADER_TS_ID_LEN	4
 
-struct netc_tagger_private {
-	struct netc_tagger_data data; /* Must be first */
-	struct kthread_worker *xmit_worker;
-};
+void print_skb_data(struct sk_buff *skb)
+{
+    u8 *buf = skb->data - ETH_HLEN;
+    int len = skb->len;
+    int i = 0;
+
+    if (!skb) {
+        printk("Bad skb parameter");
+        return;
+    }
+    printk("Packet length = 0x%x", len);
+
+    for (i = 0; i < len; i += 8) {
+        printk("0x%04x: %02x %02x %02x %02x %02x %02x %02x %02x\n", i,
+		buf[i + 0], buf[i + 1], buf[i + 2], buf[i + 3],
+		buf[i + 4], buf[i + 5], buf[i + 6], buf[i + 7]);
+    }
+    printk("\n");
+}
 
 /* Similar to is_link_local_ether_addr(hdr->h_dest) but also covers PTP */
 static inline bool netc_is_link_local(const struct sk_buff *skb)
@@ -190,12 +205,6 @@ static struct sk_buff *netc_meta_xmit(struct sk_buff *skb,
 	__be16 *tx_header;
 	__be32 *p_ts_id;
 
-	/*
-	skb = netc_pvid_tag_control_pkt(dp, skb, pcp);
-	if (!skb)
-		return NULL;
-	*/
-
 	if (clone)
 		len = len + NETC_TX_HEADER_TS_ID_LEN;
 
@@ -207,13 +216,12 @@ static struct sk_buff *netc_meta_xmit(struct sk_buff *skb,
 
 	tx_header[0] = htons(ETH_P_NETC_META);
 	tx_header[1] = htons(NETC_HEADER_HOST_TO_SWITCH |
-			     NETC_TX_HEADER_TAKE_TS |
-			     NETC_TX_HEADER_SWITCHID(dp->ds->index) |
-			     NETC_TX_HEADER_DESTPORTID(dp->index));
-
+                             NETC_TX_HEADER_SWITCHID(dp->ds->index) |
+                             NETC_TX_HEADER_DESTPORTID(dp->index));
 	if(clone) {
+		tx_header[1] |= htons(NETC_TX_HEADER_TAKE_TS);
 		p_ts_id = dsa_etype_header_pos_tx(skb) + NETC_HEADER_LEN;
-		p_ts_id[1] = cpu_to_be32(NETC_SKB_CB(clone)->ts_id);
+		p_ts_id[0] = cpu_to_be32(NETC_SKB_CB(clone)->ts_id);
 	}
 
 	return skb;
@@ -302,6 +310,7 @@ static struct sk_buff *netc_rcv_tx_timestap(struct sk_buff *skb, u16 rx_header)
 	u64 tstamp;
 
 	cpu_dp = master->dsa_ptr;
+
 	ds = dsa_switch_find(cpu_dp->dst->index, switch_id);
 	if (!ds) {
 		net_err_ratelimited("%s: cannot find switch id %d\n",
@@ -331,7 +340,10 @@ static struct sk_buff *netc_rcv_inband_control_extension(struct sk_buff *skb,
 	u16 rx_header;
 	int len = 0;
 
-	if (unlikely(!pskb_may_pull(skb, NETC_HEADER_LEN)))
+	if (unlikely(!pskb_may_pull(skb,
+				    NETC_HEADER_LEN +
+				    NETC_HEADER_TIMESTAMP_LEN +
+				    NETC_RX_HEADER_TS_ID_LEN)))
 		return NULL;
 
 	rx_header = ntohs(*(__be16 *)skb->data);
@@ -421,7 +433,7 @@ static struct sk_buff *netc_rcv(struct sk_buff *skb,
 	else
 		skb->dev = dsa_master_find_slave(netdev, switch_id, src_port);
 	if (!skb->dev) {
-		netdev_warn(netdev, "Couldn't decode source port\n");
+		/* netdev_warn(netdev, "Couldn't decode source port\n"); */
 		return NULL;
 	}
 
@@ -433,31 +445,21 @@ static struct sk_buff *netc_rcv(struct sk_buff *skb,
 
 static void netc_disconnect(struct dsa_switch *ds)
 {
-	struct netc_tagger_private *priv = ds->tagger_data;
+	struct netc_tagger_data *tagger_data = ds->tagger_data;
 
-	kthread_destroy_worker(priv->xmit_worker);
-	kfree(priv);
+	kfree(tagger_data);
 	ds->tagger_data = NULL;
 }
 
 static int netc_connect(struct dsa_switch *ds)
 {
-	struct netc_tagger_private *priv;
-	int err;
+	struct netc_tagger_data *data;
 
-	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
-	if (!priv)
+	data = kzalloc(sizeof(*data), GFP_KERNEL);
+	if (!data)
 		return -ENOMEM;
 
-	priv->xmit_worker = kthread_create_worker(0, "dsa%d:%d_xmit",
-						  ds->dst->index, ds->index);
-	if (IS_ERR(priv->xmit_worker)) {
-		err = PTR_ERR(priv->xmit_worker);
-		kfree(priv);
-		return err;
-	}
-
-	ds->tagger_data = priv;
+	ds->tagger_data = data;
 
 	return 0;
 }
