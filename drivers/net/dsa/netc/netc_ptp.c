@@ -230,10 +230,12 @@ static int netc_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 	struct netc_private *priv = ptp_data_to_netc(ptp_data);
 	int rc;
 
+	long scaled_ppb = scaled_ppm_to_ppb(scaled_ppm);
+
 	mutex_lock(&ptp_data->lock);
 
 	rc = netc_xfer_write_u64(priv, NETC_CMD_TIMER_ADJFINE_SET,
-				 scaled_ppm, NULL);
+				 scaled_ppb, NULL);
 
 	mutex_unlock(&ptp_data->lock);
 
