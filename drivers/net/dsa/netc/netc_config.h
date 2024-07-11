@@ -18,8 +18,8 @@
 
 #define NETC_SPI_WORD_BITS		8
 #define NETC_SPI_MSG_WORD_BYTES		4
-#define NETC_SPI_MSG_HEADER_SIZE	16
-#define NETC_SPI_MSG_PARAM_SIZE		12
+#define NETC_SPI_MSG_HEADER_SIZE	20
+#define NETC_SPI_MSG_PARAM_SIZE		16
 #define NETC_SPI_MSG_MAXLEN		4096
 #define NETC_SPI_MSG_RESPONSE_TIME	1000 /* us */
 
@@ -210,6 +210,16 @@ struct netc_cmd_vlan_dump {
 struct netc_cmd_timer_pps {
 	uint64_t pin_start;
 	uint32_t pin_duration32;
+};
+
+/* command param for NETC PTP */
+struct netc_ptp_ctl_param {
+	union {
+		uint64_t ns;
+		int64_t offset;
+		int64_t ppb;
+	};
+	uint8_t clock_id;
 };
 
 struct netc_cmd_port_ethtool_stats {
