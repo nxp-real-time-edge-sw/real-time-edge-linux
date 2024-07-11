@@ -212,12 +212,16 @@ static int netc_ptp_settime(struct ptp_clock_info *ptp,
 {
 	struct netc_ptp_data *ptp_data = ptp_caps_to_data(ptp);
 	struct netc_private *priv = ptp_data_to_netc(ptp_data);
-	u64 ns = timespec64_to_ns(ts);
+	struct netc_ptp_ctl_param param;
 	int rc;
+
+	param.ns = timespec64_to_ns(ts);
+	param.clock_id = 0;
 
 	mutex_lock(&ptp_data->lock);
 
-	rc = netc_xfer_write_u64(priv, NETC_CMD_TIMER_CUR_SET, ns, NULL);
+	rc = netc_xfer_set_cmd(priv, NETC_CMD_TIMER_CUR_SET,
+			       &param, sizeof(param));
 
 	mutex_unlock(&ptp_data->lock);
 
@@ -228,14 +232,16 @@ static int netc_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 {
 	struct netc_ptp_data *ptp_data = ptp_caps_to_data(ptp);
 	struct netc_private *priv = ptp_data_to_netc(ptp_data);
+	struct netc_ptp_ctl_param param;
 	int rc;
 
-	long scaled_ppb = scaled_ppm_to_ppb(scaled_ppm);
+	param.ppb = scaled_ppm_to_ppb(scaled_ppm);;
+	param.clock_id = 0;
 
 	mutex_lock(&ptp_data->lock);
 
-	rc = netc_xfer_write_u64(priv, NETC_CMD_TIMER_ADJFINE_SET,
-				 scaled_ppb, NULL);
+	rc = netc_xfer_set_cmd(priv, NETC_CMD_TIMER_ADJFINE_SET,
+			       &param, sizeof(param));
 
 	mutex_unlock(&ptp_data->lock);
 
@@ -246,12 +252,16 @@ static int netc_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 {
 	struct netc_ptp_data *ptp_data = ptp_caps_to_data(ptp);
 	struct netc_private *priv = ptp_data_to_netc(ptp_data);
+	struct netc_ptp_ctl_param param;
 	int rc;
+
+	param.offset = delta;
+	param.clock_id = 0;
 
 	mutex_lock(&ptp_data->lock);
 
-	rc = netc_xfer_write_u64(priv, NETC_CMD_TIMER_ADJTIME_SET,
-				 delta, NULL);
+	rc = netc_xfer_set_cmd(priv, NETC_CMD_TIMER_ADJTIME_SET,
+			       &param, sizeof(param));
 
 	mutex_unlock(&ptp_data->lock);
 
