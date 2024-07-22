@@ -81,6 +81,7 @@ static int __sched __rwbase_read_lock(struct rwbase_rt *rwb,
 	if (atomic_read(&rwb->readers) != WRITER_BIAS) {
 		atomic_inc(&rwb->readers);
 		raw_spin_unlock_irq(&rtm->wait_lock);
+		rwbase_post_schedule();
 		return 0;
 	}
 
