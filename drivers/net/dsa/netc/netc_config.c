@@ -260,14 +260,15 @@ int netc_fdb_entry_add(struct netc_private *priv,
 
 int netc_fdb_entry_del(struct netc_private *priv,
 		       const unsigned char *mac_addr,
-		       uint16_t vid)
+		       uint16_t vid, int port)
 {
 	struct device *dev = priv->ds->dev;
-	struct netc_cmd_fdb_del fdb_del = {0};
+	struct netc_cmd_fdb fdb_del = {0};
 	int rc;
 
 	ether_addr_copy(fdb_del.mac_addr, mac_addr);
 	fdb_del.vid = vid;
+	fdb_del.port = (uint8_t)port;;
 
 	rc = netc_xfer_set_cmd(priv, NETC_CMD_FDB_DEL,
 			       &fdb_del, sizeof(fdb_del));

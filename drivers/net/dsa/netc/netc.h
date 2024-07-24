@@ -68,6 +68,8 @@ struct netc_private {
 	 * the switch doesn't confuse them with one another.
 	 */
 	struct mutex mgmt_lock;
+	/* Serializes accesses to the FDB */
+	struct mutex fdb_lock;
 
 	struct devlink_region **regions;
 

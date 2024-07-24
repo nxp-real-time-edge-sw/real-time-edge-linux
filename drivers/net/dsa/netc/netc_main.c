@@ -130,6 +130,7 @@ static int netc_fdb_add(struct dsa_switch *ds, int port,
 			struct dsa_db db)
 {
 	struct netc_private *priv = ds->priv;
+	int rc;
 
 	if (!vid) {
 		switch (db.type) {
@@ -148,7 +149,11 @@ static int netc_fdb_add(struct dsa_switch *ds, int port,
 	usleep_range(NETC_SPI_MSG_RESPONSE_TIME,
 		     NETC_SPI_MSG_RESPONSE_TIME * 10);
 
-	return netc_fdb_entry_add(priv, addr, vid, port);
+	mutex_lock(&priv->fdb_lock);
+	rc = netc_fdb_entry_add(priv, addr, vid, port);
+	mutex_unlock(&priv->fdb_lock);
+
+	return rc;
 }
 
 static int netc_fdb_del(struct dsa_switch *ds, int port,
@@ -156,6 +161,7 @@ static int netc_fdb_del(struct dsa_switch *ds, int port,
 			struct dsa_db db)
 {
 	struct netc_private *priv = ds->priv;
+	int rc;
 
 	if (!vid) {
 		switch (db.type) {
@@ -170,7 +176,11 @@ static int netc_fdb_del(struct dsa_switch *ds, int port,
 		}
 	}
 
-	return netc_fdb_entry_del(priv, addr, vid);
+	mutex_lock(&priv->fdb_lock);
+	rc = netc_fdb_entry_del(priv, addr, vid, port);
+	mutex_unlock(&priv->fdb_lock);
+
+	return rc;
 }
 
 static int netc_fdb_dump(struct dsa_switch *ds, int port,
@@ -218,6 +228,20 @@ static int netc_fdb_dump(struct dsa_switch *ds, int port,
 	}
 
 	return 0;
+}
+
+static int netc_mdb_add(struct dsa_switch *ds, int port,
+			const struct switchdev_obj_port_mdb *mdb,
+			struct dsa_db db)
+{
+	return netc_fdb_add(ds, port, mdb->addr, mdb->vid, db);
+}
+
+static int netc_mdb_del(struct dsa_switch *ds, int port,
+			   const struct switchdev_obj_port_mdb *mdb,
+			   struct dsa_db db)
+{
+	return netc_fdb_del(ds, port, mdb->addr, mdb->vid, db);
 }
 
 static int netc_parse_ports_node(struct netc_private *priv,
@@ -1064,6 +1088,8 @@ static const struct dsa_switch_ops netc_switch_ops = {
 	.port_fdb_dump          = netc_fdb_dump,
 	.port_fdb_add           = netc_fdb_add,
 	.port_fdb_del           = netc_fdb_del,
+	.port_mdb_add		= netc_mdb_add,
+	.port_mdb_del		= netc_mdb_del,
 	.port_bridge_join	= netc_bridge_join,
 	.port_bridge_leave	= netc_bridge_leave,
 	.port_vlan_filtering	= netc_vlan_filtering,
@@ -1180,6 +1206,7 @@ static int netc_probe(struct spi_device *spi)
 	priv->ds = ds;
 
 	mutex_init(&priv->mgmt_lock);
+	mutex_init(&priv->fdb_lock);
 	spin_lock_init(&priv->ts_id_lock);
 
 	rc = netc_parse_dt(priv);

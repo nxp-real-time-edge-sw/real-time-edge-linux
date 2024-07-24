@@ -154,12 +154,6 @@ struct netc_cmd_fdb {
 	uint8_t reserved[3];
 };
 
-/* command data for NETC_CMD_FDB_DEL */
-struct netc_cmd_fdb_del {
-	uint8_t mac_addr[ETH_ALEN];
-	uint16_t vid;
-};
-
 /* command data for NETC_CMD_VLAN_ADD */
 struct netc_cmd_vlan {
 	uint16_t vid;
@@ -423,7 +417,7 @@ int netc_fdb_entry_add(struct netc_private *priv,
 		       uint16_t vid, int port);
 int netc_fdb_entry_del(struct netc_private *priv,
 		       const unsigned char *mac_addr,
-		       uint16_t vid);
+		       uint16_t vid, int port);
 int netc_fdb_entry_get(struct netc_private *priv,
 		       struct netc_fdb_entry *fdb,
 		       uint32_t entry_id, uint32_t *next_id);
