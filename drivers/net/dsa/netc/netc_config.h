@@ -79,8 +79,9 @@ enum netc_cmd {
 	NETC_CMD_QCI_DEL,
 	NETC_CMD_QCI_GET,
 	NETC_CMD_FRER_SG_SET,
+	NETC_CMD_FRER_SG_DEL,
 	NETC_CMD_FRER_SR_SET,
-	NETC_CMD_FRER_DEL,
+	NETC_CMD_FRER_SR_DEL,
 	NETC_CMD_STREAMID_SET,
 	NETC_CMD_STREAMID_DEL,
 
@@ -266,7 +267,7 @@ typedef enum {
 
 struct netc_stream_seqgen {
 	netc_encapsulation_t enc;
-	uint8_t	iport_mask;
+	uint8_t	iport;
 };
 
 struct netc_stream_seqrec {
@@ -275,7 +276,7 @@ struct netc_stream_seqrec {
 	uint16_t reset_timeout;
 	uint8_t his_len;
 	uint8_t rtag_pop_en;
-	uint8_t	eport_mask;
+	uint8_t	eport;
 };
 
 enum tc_frer_tag_action {
@@ -311,7 +312,7 @@ struct netc_cmd_nullstreamid {
 struct netc_cmd_frer_sg {
 	uint16_t stream_handle;
 	uint8_t encap;
-	uint8_t	iport_mask;
+	uint8_t	iport;
 };
 
 /* command data for NETC_CMD_FRER_SR_SET */
@@ -322,25 +323,15 @@ struct netc_cmd_frer_sr {
 	uint8_t encap;
 	uint8_t alg;
 	uint8_t rtag_pop_en;
-	uint8_t	eport_mask;
-};
-
-/* command data for NETC_CMD_FRER_DEL */
-struct netc_cmd_frer_del {
-	uint16_t	stream_handle;
-	uint8_t		port_mask;
+	uint8_t	eport;
+	uint8_t reserved[3];
 };
 
 /* command data for NETC_CMD_QCI_SET */
 struct netc_cmd_qci_set {
-	uint16_t	stream_handle;
 	uint32_t	maxsdu;
-};
-
-/* command data for NETC_CMD_QCI_DEL */
-struct netc_cmd_qci_del {
 	uint16_t	stream_handle;
-	uint8_t		port_mask;
+	uint8_t		reserved[2];
 };
 
 struct netc_cmd_port_ethtool_stats {
@@ -440,8 +431,8 @@ int netc_frer_seqgen(struct netc_private *priv,
 		struct netc_stream_filter *filter);
 int netc_frer_seqrec(struct netc_private *priv,
 		struct netc_stream_filter *filter);
-int netc_frer_del(struct netc_private *priv,
-		uint16_t handle, uint32_t port);
+int netc_frer_sg_del(struct netc_private *priv, uint16_t handle, uint32_t port);
+int netc_frer_sr_del(struct netc_private *priv, uint16_t handle, uint32_t port);
 
 int netc_qci_set(struct netc_private *priv,
 		struct netc_stream_filter *filter);

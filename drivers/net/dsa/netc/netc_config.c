@@ -363,14 +363,10 @@ int netc_qci_del(struct netc_private *priv, uint16_t handle,
 		uint32_t port)
 {
 	struct device *dev = priv->ds->dev;
-	struct netc_cmd_qci_del qci_del;
 	int rc;
 
-	qci_del.stream_handle = handle;
-	qci_del.port_mask = BIT(port);
-
 	rc = netc_xfer_set_cmd(priv, NETC_CMD_QCI_DEL,
-			&qci_del, sizeof(qci_del));
+			       &handle, sizeof(handle));
 	if (rc < 0) {
 		dev_err(dev, "failed to delete Qci setting: %d\n", rc);
 		return rc;
@@ -386,7 +382,7 @@ int netc_frer_seqgen(struct netc_private *priv, struct netc_stream_filter *filte
 	int rc;
 
 	frer_sg.stream_handle = filter->stream_handle;
-	frer_sg.iport_mask = filter->seqgen.iport_mask;
+	frer_sg.iport = filter->seqgen.iport;
 	frer_sg.encap = filter->seqgen.enc;
 
 	rc = netc_xfer_set_cmd(priv, NETC_CMD_FRER_SG_SET,
@@ -406,12 +402,12 @@ int netc_frer_seqrec(struct netc_private *priv, struct netc_stream_filter *filte
 	int rc;
 
 	frer_sr.stream_handle = filter->stream_handle;
-	frer_sr.eport_mask = filter->seqrec.eport_mask;
+	frer_sr.eport = filter->seqrec.eport;
 	frer_sr.encap = filter->seqrec.enc;
 	frer_sr.alg = filter->seqrec.alg;
 	frer_sr.his_len = filter->seqrec.his_len;
 	frer_sr.reset_timeout = filter->seqrec.reset_timeout;
-	frer_sr.rtag_pop_en = 1;
+	frer_sr.rtag_pop_en = filter->seqrec.rtag_pop_en;
 
 	rc = netc_xfer_set_cmd(priv, NETC_CMD_FRER_SR_SET,
 			&frer_sr, sizeof(frer_sr));
@@ -423,18 +419,28 @@ int netc_frer_seqrec(struct netc_private *priv, struct netc_stream_filter *filte
 	return 0;
 }
 
-int netc_frer_del(struct netc_private *priv, uint16_t stream_handle,
-		uint32_t port)
+int netc_frer_sg_del(struct netc_private *priv, uint16_t stream_handle, uint32_t port)
 {
 	struct device *dev = priv->ds->dev;
-	struct netc_cmd_frer_del frer_del = {0};
 	int rc;
 
-	frer_del.stream_handle = stream_handle;
-	frer_del.port_mask = BIT(port);
+	rc = netc_xfer_set_cmd(priv, NETC_CMD_FRER_SG_DEL,
+			&stream_handle, sizeof(stream_handle));
+	if (rc < 0) {
+		dev_err(dev, "failed to delete FRER setting: %d\n", rc);
+		return rc;
+	}
 
-	rc = netc_xfer_set_cmd(priv, NETC_CMD_FRER_DEL,
-			&frer_del, sizeof(frer_del));
+	return 0;
+}
+
+int netc_frer_sr_del(struct netc_private *priv, uint16_t stream_handle, uint32_t port)
+{
+	struct device *dev = priv->ds->dev;
+	int rc;
+
+	rc = netc_xfer_set_cmd(priv, NETC_CMD_FRER_SR_DEL,
+			       &stream_handle, sizeof(stream_handle));
 	if (rc < 0) {
 		dev_err(dev, "failed to delete FRER setting: %d\n", rc);
 		return rc;

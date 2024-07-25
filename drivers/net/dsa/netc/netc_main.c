@@ -699,6 +699,7 @@ netc_stream_table_get(struct list_head *stream_list, unsigned long id)
 static int netc_cls_flower_add(struct dsa_switch *ds, int port,
 			       struct flow_cls_offload *f, bool ingress)
 {
+	struct dsa_port *dp = dsa_to_port(ds, port);
 	struct netc_private *priv = ds->priv;
 	struct netlink_ext_ack *extack = f->common.extack;
 	const struct flow_action_entry *a;
@@ -706,6 +707,7 @@ static int netc_cls_flower_add(struct dsa_switch *ds, int port,
 	struct netc_stream *stream_entry;
 	struct netc_psfp_list *psfp;
 	struct netc_stream_filter filter = {0};
+	int cpu_port = dp->cpu_dp->index;
 	int i, rc;
 	uint32_t handle;
 
@@ -722,29 +724,42 @@ static int netc_cls_flower_add(struct dsa_switch *ds, int port,
 	flow_action_for_each(i, a, &f->rule->action) {
 		switch (a->id) {
 		case FLOW_ACTION_FRER:
-			switch (a->frer.tag_action) {
-				case FRER_TAG_PUSH:
-					stream.port_mask = BIT(port);
-					stream.action = NETC_STREAM_FRER_SEQGEN;
-					filter.seqgen.enc = a->frer.tag_type;
-					filter.seqgen.iport_mask |= BIT(port);
-					break;
-				case FRER_TAG_POP:
+			if ((a->frer.recover && a->frer.tag_action == FRER_TAG_PUSH) ||
+			    (!a->frer.recover && a->frer.tag_action != FRER_TAG_PUSH)) {
+				NL_SET_ERR_MSG_MOD(extack,
+						   "Non-supported tag action");
+				rc = -EOPNOTSUPP;
+				goto err;
+			}
+
+			if (a->frer.recover) {
+				stream.action = NETC_STREAM_FRER_SEQREC;
+				filter.seqrec.enc = a->frer.tag_type;
+				filter.seqrec.alg = a->frer.rcvy_alg;
+				filter.seqrec.his_len = a->frer.rcvy_history_len;
+				filter.seqrec.reset_timeout = a->frer.rcvy_reset_msec;
+				filter.seqrec.rtag_pop_en =
+					(a->frer.tag_action == FRER_TAG_POP) ? 1 : 0;
+				if (ingress) {
+					stream.port_mask = 0xF & ~BIT(cpu_port);
+					filter.seqrec.eport = cpu_port;
+				} else {
 					stream.port_mask = 0xF & ~BIT(port);
-					stream.action = NETC_STREAM_FRER_SEQREC;
-					filter.seqrec.enc = a->frer.tag_type;
-					filter.seqrec.eport_mask |= BIT(port);
-					filter.seqrec.alg = a->frer.rcvy_alg;
-					filter.seqrec.his_len = a->frer.rcvy_history_len;
-					filter.seqrec.reset_timeout = a->frer.rcvy_reset_msec;
-					break;
-				default:
-					NL_SET_ERR_MSG_MOD(extack,
-							"Non-supported tag action");
-					rc = -EOPNOTSUPP;
-					goto err;
+					filter.seqrec.eport = port;
+				}
+			} else {
+				stream.action = NETC_STREAM_FRER_SEQGEN;
+				filter.seqgen.enc = a->frer.tag_type;
+				if (ingress) {
+					filter.seqgen.iport = port;
+					stream.port_mask = BIT(port);
+				} else {
+					filter.seqgen.iport = cpu_port;
+					stream.port_mask = BIT(cpu_port);
+				}
 			}
 			break;
+
 		case FLOW_ACTION_POLICE:
 			stream.port_mask = BIT(port);
 			stream.action = NETC_STREAM_QCI;
@@ -837,8 +852,12 @@ static int netc_cls_flower_del(struct dsa_switch *ds, int port,
 
 	switch (stream->action) {
 	case NETC_STREAM_FRER_SEQGEN:
+		rc = netc_frer_sg_del(priv, stream_handle, port);
+		if (rc)
+			goto err;
+		break;
 	case NETC_STREAM_FRER_SEQREC:
-		rc = netc_frer_del(priv, stream_handle, port);
+		rc = netc_frer_sr_del(priv, stream_handle, port);
 		if (rc)
 			goto err;
 		break;
