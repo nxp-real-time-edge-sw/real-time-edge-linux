@@ -710,6 +710,7 @@ static int netc_cls_flower_add(struct dsa_switch *ds, int port,
 	int cpu_port = dp->cpu_dp->index;
 	int i, rc;
 	uint32_t handle;
+	bool set_stream = false;
 
 	psfp = &priv->psfp;
 
@@ -758,6 +759,7 @@ static int netc_cls_flower_add(struct dsa_switch *ds, int port,
 					stream.port_mask = BIT(cpu_port);
 				}
 			}
+			set_stream = true;
 			break;
 
 		case FLOW_ACTION_POLICE:
@@ -770,12 +772,35 @@ static int netc_cls_flower_add(struct dsa_switch *ds, int port,
 				goto err;
 			}
 			filter.qci.maxsdu = a->police.mtu;
+			set_stream = true;
 			break;
+
+		case FLOW_ACTION_MIRRED:
+			if (stream.type != STREAMID_NULL) {
+				NL_SET_ERR_MSG_MOD(extack,
+						"Only support destination MAC");
+				rc = -EOPNOTSUPP;
+				goto err;
+			}
+			dp = dsa_port_from_netdev(a->dev);
+			if (IS_ERR(dp)) {
+				rc = -EINVAL;
+				goto err;
+			}
+			if (netc_fdb_entry_add(priv, stream.mac, stream.vid, dp->index) < 0) {
+				rc = -EINVAL;
+				goto err;
+			}
+			break;
+
 		default:
 			rc = -EOPNOTSUPP;
 			goto err;
 		}
 	}
+
+	if (!set_stream)
+		goto exit;
 
 	stream_entry = netc_stream_table_lookup(&psfp->stream_list, &stream);
 	if (stream_entry) {
@@ -820,6 +845,7 @@ static int netc_cls_flower_add(struct dsa_switch *ds, int port,
 			return -EOPNOTSUPP;
 	}
 
+exit:
 	mutex_unlock(&psfp->lock);
 
 	return 0;
@@ -845,7 +871,7 @@ static int netc_cls_flower_del(struct dsa_switch *ds, int port,
 	stream = netc_stream_table_get(&psfp->stream_list, cls->cookie);
 	if (!stream) {
 		mutex_unlock(&psfp->lock);
-		return -EEXIST;
+		return 0;
 	}
 
 	stream_handle = stream->handle;
