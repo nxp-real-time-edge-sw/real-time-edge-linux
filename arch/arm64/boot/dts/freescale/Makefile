@@ -176,6 +176,8 @@ dtb-$(CONFIG_ARCH_MXC) += imx8mp-ddr4-evk.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk-ndm.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk-dsa.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk-dsa-enetc.dtb
+dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk-dsa-fec-swp0.dtb
+dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk-dsa-fec-swp3.dtb
 
 imx8mp-evk-revb4-dtbs := imx8mp-evk.dtb imx8mp-evk-revb4.dtbo
 imx8mp-evk-revb4-rm67191-dtbs := imx8mp-evk-rm67191.dtb imx8mp-evk-revb4.dtbo
@@ -210,6 +212,8 @@ imx8mp-ddr4-evk-revb4-dtbs := imx8mp-ddr4-evk.dtb imx8mp-evk-revb4.dtbo
 imx8mp-evk-revb4-ndm-dtbs := imx8mp-evk-ndm.dtb imx8mp-evk-revb4.dtbo
 imx8mp-evk-revb4-dsa-dtbs := imx8mp-evk-dsa.dtb imx8mp-evk-revb4.dtbo
 imx8mp-evk-revb4-dsa-enetc-dtbs := imx8mp-evk-dsa-enetc.dtb imx8mp-evk-revb4.dtbo
+imx8mp-evk-revb4-dsa-fec-swp0-dtbs := imx8mp-evk-dsa-fec-swp0.dtb imx8mp-evk-revb4.dtbo
+imx8mp-evk-revb4-dsa-fec-swp3-dtbs := imx8mp-evk-dsa-fec-swp3.dtb imx8mp-evk-revb4.dtbo
 
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk-revb4.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk-revb4-rm67191.dtb
@@ -247,6 +251,8 @@ dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk-revb4-rpmsg.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk-revb4-rpmsg-lpv.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk-revb4-dsa.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk-revb4-dsa-enetc.dtb
+dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk-revb4-dsa-fec-swp0.dtb
+dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk-revb4-dsa-fec-swp3.dtb
 
 dtb-$(CONFIG_ARCH_MXC) += imx8mq-evk.dtb imx8mq-evk-rpmsg.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mq-evk.dtb imx8mq-evk-rpmsg.dtb imx8mq-evk-pcie1-m2.dtb imx8mq-evk-usd-wifi.dtb \
@@ -440,6 +446,8 @@ dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk.dtb \
 			  imx93-11x11-evk-multicore-rtos.dtb \
 			  imx93-11x11-evk-dsa.dtb \
 			  imx93-11x11-evk-dsa-enetc.dtb \
+			  imx93-11x11-evk-dsa-fec-swp0.dtb \
+			  imx93-11x11-evk-dsa-fec-swp3.dtb \
 			  imx93-11x11-evk-dpdk.dtb
 
 dtb-$(CONFIG_ARCH_MXC) += imx91-11x11-evk.dtb \
