@@ -340,6 +340,76 @@ int netc_streamid_del(struct netc_private *priv, uint16_t stream_handle)
 	return 0;
 }
 
+int netc_qbv_set(struct netc_private *priv, int port, int enable,
+		 struct tc_taprio_qopt_offload *taprio)
+{
+	struct device *dev = priv->ds->dev;
+	struct netc_cmd_qbv_set_p1 qbvconf_p1 = {0};
+	struct netc_cmd_qbv_set_p2 qbvconf_p2 = {0};
+	struct netc_cmd_qbv_gcl qbvconf_gcl = {0};
+	uint8_t buffer[16];
+	uint8_t offset;
+	int rc;
+
+	qbvconf_p1.port = port;
+	qbvconf_p1.enabled = enable;
+	qbvconf_p1.base_time = taprio->base_time;
+	qbvconf_p1.cycle_time = taprio->cycle_time;
+	qbvconf_p1.gcl_len = taprio->num_entries;
+	if (enable)
+		qbvconf_p1.gcl_len = taprio->num_entries;
+	else
+		qbvconf_p1.gcl_len = 0;
+
+	if (qbvconf_p1.gcl_len > NETC_QBV_LIST_MAX_ENTRIES)
+		return -EINVAL;
+
+	rc = netc_xfer_set_cmd(priv, NETC_CMD_QBV_SET_P1, &qbvconf_p1, sizeof(qbvconf_p1));
+	if (rc < 0)
+		goto err;
+
+	qbvconf_p2.cycle_time_ext = taprio->cycle_time_extension;
+	if (qbvconf_p1.gcl_len > 0) {
+		qbvconf_p2.gcl.interval = taprio->entries[0].interval;
+		qbvconf_p2.gcl.gate_mask = taprio->entries[0].gate_mask;
+		qbvconf_p2.gcl.operation = taprio->entries[0].command;
+	}
+	rc = netc_xfer_set_cmd(priv, NETC_CMD_QBV_SET_P2, &qbvconf_p2, sizeof(qbvconf_p2));
+	if (rc < 0)
+		goto err;
+
+	offset = 0;
+	memset(buffer, 0, sizeof(buffer));
+	for (int i = 1; i < qbvconf_p1.gcl_len; i++) {
+		qbvconf_gcl.interval = taprio->entries[i].interval;
+		qbvconf_gcl.gate_mask = taprio->entries[i].gate_mask;
+		qbvconf_gcl.operation = taprio->entries[i].command;
+		memcpy(&buffer[offset], &qbvconf_gcl, sizeof(qbvconf_gcl));
+		if (offset) {
+			rc = netc_xfer_set_cmd(priv, NETC_CMD_QBV_SET_GCL, buffer, sizeof(buffer));
+			if (rc < 0)
+				goto err;
+
+			offset = 0;
+			memset(buffer, 0, sizeof(buffer));
+		} else {
+			offset = sizeof(qbvconf_gcl);
+		}
+	}
+
+	if (offset) {
+		rc = netc_xfer_set_cmd(priv, NETC_CMD_QBV_SET_GCL, buffer, sizeof(buffer));
+		if (rc < 0)
+			goto err;
+	}
+
+	return 0;
+err:
+	dev_err(dev, "failed to set qbv on port: %d\n", port);
+
+	return rc;
+}
+
 int netc_qci_set(struct netc_private *priv, struct netc_stream_filter *filter)
 {
 	struct device *dev = priv->ds->dev;

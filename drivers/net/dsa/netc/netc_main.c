@@ -926,17 +926,50 @@ static int netc_cls_flower_stats(struct dsa_switch *ds, int port,
 	return 0;
 }
 
+static int netc_port_taprio_set(struct dsa_switch *ds, int port,
+				struct tc_taprio_qopt_offload *taprio)
+{
+	struct netc_private *priv = ds->priv;
+	int enable = 1;
+	int rc;
+
+	if (taprio->cmd == TAPRIO_CMD_DESTROY) {
+		enable = 0;
+	} else if (taprio->cmd != TAPRIO_CMD_REPLACE) {
+		rc = -EOPNOTSUPP;
+		return rc;
+	}
+
+	rc = netc_qbv_set(priv, port, enable, taprio);
+
+	return rc;
+}
+
+static int netc_qos_query_caps(struct tc_query_caps_base *base)
+{
+	switch (base->type) {
+	case TC_SETUP_QDISC_TAPRIO: {
+		struct tc_taprio_caps *caps = base->caps;
+
+		caps->supports_queue_max_sdu = true;
+
+		return 0;
+	}
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
+
 static int netc_port_setup_tc(struct dsa_switch *ds, int port,
 			       enum tc_setup_type type,
 			       void *type_data)
 {
 	switch (type) {
 	case TC_QUERY_CAPS:
-		dev_info(ds->dev, "TC_QUERY_CAPS not support yet!\n");
-		return -EOPNOTSUPP;
+		return netc_qos_query_caps(type_data);
 	case TC_SETUP_QDISC_TAPRIO:
-		dev_info(ds->dev, "TC_SETUP_QDISC_TAPRIO not support yet!\n");
-		return -EOPNOTSUPP;
+		return netc_port_taprio_set(ds, port, type_data);
 	case TC_SETUP_QDISC_CBS:
 		dev_info(ds->dev, "TC_SETUP_QDISC_CBS not support yet!\n");
 		return -EOPNOTSUPP;
@@ -1144,6 +1177,7 @@ static const struct dsa_switch_ops netc_switch_ops = {
 	.port_hwtstamp_set	= netc_hwtstamp_set,
 	.port_rxtstamp		= netc_port_rxtstamp,
 	.port_txtstamp		= netc_port_txtstamp,
+	.get_ts_info		= netc_get_ts_info,
 	.devlink_info_get	= netc_devlink_info_get,
 	.tag_8021q_vlan_add	= netc_8021q_vlan_add,
 	.tag_8021q_vlan_del	= netc_8021q_vlan_del,

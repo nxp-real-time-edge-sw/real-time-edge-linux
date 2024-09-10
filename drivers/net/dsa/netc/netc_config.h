@@ -6,6 +6,7 @@
 #ifndef _NETC_CONFIG_H
 #define _NETC_CONFIG_H
 
+#include <net/pkt_sched.h>
 #include <linux/types.h>
 #include <asm/types.h>
 
@@ -15,6 +16,7 @@
 #define NETC_NUM_TC			8
 
 #define NETC_ETHTOOL_STATS_NUM_MAX	120
+#define NETC_QBV_LIST_MAX_ENTRIES	256
 
 #define NETC_SPI_WORD_BITS		8
 #define NETC_SPI_MSG_WORD_BYTES		4
@@ -71,7 +73,9 @@ enum netc_cmd {
 	NETC_CMD_TIMER_EXTTS_START,
 	NETC_CMD_TIMER_EXTTS_STOP,
 
-	NETC_CMD_QBV_SET = 0x3000,
+	NETC_CMD_QBV_SET_P1 = 0x3000,
+	NETC_CMD_QBV_SET_P2,
+	NETC_CMD_QBV_SET_GCL,
 	NETC_CMD_QBV_GET,
 	NETC_CMD_QBU_SET,
 	NETC_CMD_QBU_GET,
@@ -327,6 +331,26 @@ struct netc_cmd_frer_sr {
 	uint8_t reserved[3];
 };
 
+struct netc_cmd_qbv_gcl {
+	uint32_t interval;
+	uint16_t gate_mask;
+	uint16_t operation;
+};
+
+struct netc_cmd_qbv_set_p1 {
+	uint64_t base_time;
+	uint32_t cycle_time;
+	uint16_t gcl_len;
+	uint8_t enabled;
+	uint8_t port;
+};
+
+struct netc_cmd_qbv_set_p2 {
+	struct netc_cmd_qbv_gcl gcl;
+	uint32_t cycle_time_ext;
+	uint8_t reserved[4];
+};
+
 /* command data for NETC_CMD_QCI_SET */
 struct netc_cmd_qci_set {
 	uint32_t	maxsdu;
@@ -439,4 +463,6 @@ int netc_qci_set(struct netc_private *priv,
 int netc_qci_del(struct netc_private *priv,
 		uint16_t handle, uint32_t port);
 
+int netc_qbv_set(struct netc_private *priv, int port, int enable,
+		 struct tc_taprio_qopt_offload *taprio);
 #endif /* _NETC_CONFIG_H */
