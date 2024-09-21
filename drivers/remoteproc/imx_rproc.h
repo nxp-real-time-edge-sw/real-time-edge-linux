@@ -24,6 +24,8 @@ enum imx_rproc_method {
 	IMX_RPROC_SMC,
 	/* Through System Control Unit API */
 	IMX_RPROC_SCU_API,
+	/* Through ARM64 PSCI */
+	IMX_RPROC_PSCI,
 };
 
 struct imx_rproc_dcfg {
