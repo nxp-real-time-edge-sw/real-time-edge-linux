@@ -4738,6 +4738,7 @@ static int enetc_int_vector_init(struct enetc_ndev_priv *priv, int i,
 {
 	struct enetc_int_vector *v;
 	struct enetc_bdr *bdr;
+	char name[NAPINAMSIZ];
 	int j, err;
 
 	v = kzalloc(struct_size(v, tx_ring, v_tx_rings), GFP_KERNEL);
@@ -4773,7 +4774,10 @@ static int enetc_int_vector_init(struct enetc_ndev_priv *priv, int i,
 	}
 
 	INIT_WORK(&v->rx_dim.work, enetc_rx_dim_work);
-	netif_napi_add(priv->ndev, &v->napi, enetc_poll);
+
+	snprintf(name, NAPINAMSIZ, "rxtx-%d", i);
+	netif_napi_add_named(priv->ndev, &v->napi, enetc_poll,
+		NAPI_POLL_WEIGHT, name);
 	v->count_tx_rings = v_tx_rings;
 
 	for (j = 0; j < v_tx_rings; j++) {
