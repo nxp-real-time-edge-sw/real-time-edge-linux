@@ -2403,10 +2403,9 @@ static int enetc_config_clsflower(struct enetc_ndev_priv *priv,
 			err = enetc_psfp_parse_clsflower(priv, cls_flower);
 		else
 			err = enetc4_psfp_parse_clsflower(priv, cls_flower);
-		if (err) {
-			NL_SET_ERR_MSG_MOD(extack, "Invalid PSFP inputs");
+
+		if (err)
 			return err;
-		}
 	} else {
 		NL_SET_ERR_MSG_MOD(extack, "Unsupported actions");
 		return -EOPNOTSUPP;
