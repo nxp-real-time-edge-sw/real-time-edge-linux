@@ -88,6 +88,7 @@ enum netc_cmd {
 	NETC_CMD_FRER_SR_DEL,
 	NETC_CMD_STREAMID_SET,
 	NETC_CMD_STREAMID_DEL,
+	NETC_CMD_PRIORITY_MAP_SET,
 
 	NETC_CMD_REG_SET = 0x4000,
 	NETC_CMD_REG_GET,
@@ -331,6 +332,13 @@ struct netc_cmd_frer_sr {
 	uint8_t reserved[3];
 };
 
+struct netc_cmd_priority_map {
+	uint8_t port;
+	uint8_t reset;
+	uint8_t map[8];
+	uint8_t reserved[6];
+};
+
 struct netc_cmd_qbv_gcl {
 	uint32_t interval;
 	uint16_t gate_mask;
@@ -465,4 +473,5 @@ int netc_qci_del(struct netc_private *priv,
 
 int netc_qbv_set(struct netc_private *priv, int port, int enable,
 		 struct tc_taprio_qopt_offload *taprio);
+int netc_port_priority_map(struct netc_private *priv, int port, uint8_t *map, int reset);
 #endif /* _NETC_CONFIG_H */

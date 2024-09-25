@@ -23,6 +23,8 @@
 #include <linux/dsa/netc.h>
 #include "netc.h"
 
+uint8_t netc_default_priority_map[] = {0, 1, 2, 3, 4, 5, 6, 7};
+
 int netc_is_vlan_configured(struct netc_private *priv, uint16_t vid)
 {
 	struct netc_vlan_entry *vlan;
@@ -926,6 +928,30 @@ static int netc_cls_flower_stats(struct dsa_switch *ds, int port,
 	return 0;
 }
 
+static int netc_port_mqprio_set(struct dsa_switch *ds, int port,
+				struct tc_mqprio_qopt_offload *mqprio)
+{
+	struct netc_private *priv = ds->priv;
+	struct tc_mqprio_qopt *qopt = &mqprio->qopt;
+	struct dsa_port *dp;
+	uint8_t *map;
+	int reset;
+
+	dp = dsa_to_port(ds, port);
+
+	if (dp->bridge)
+		map = qopt->prio_tc_map;
+	else
+		map = netc_default_priority_map;
+
+	if (qopt->num_tc)
+		reset = 0;
+	else
+		reset = 1;
+
+	return netc_port_priority_map(priv, port, map, reset);
+}
+
 static int netc_port_taprio_set(struct dsa_switch *ds, int port,
 				struct tc_taprio_qopt_offload *taprio)
 {
@@ -939,6 +965,8 @@ static int netc_port_taprio_set(struct dsa_switch *ds, int port,
 		rc = -EOPNOTSUPP;
 		return rc;
 	}
+
+	netc_port_mqprio_set(ds, port, &taprio->mqprio);
 
 	rc = netc_qbv_set(priv, port, enable, taprio);
 
@@ -974,8 +1002,7 @@ static int netc_port_setup_tc(struct dsa_switch *ds, int port,
 		dev_info(ds->dev, "TC_SETUP_QDISC_CBS not support yet!\n");
 		return -EOPNOTSUPP;
 	case TC_SETUP_QDISC_MQPRIO:
-		dev_info(ds->dev, "TC_SETUP_QDISC_MQPRIO not support yet!\n");
-		return -EOPNOTSUPP;
+		return netc_port_mqprio_set(ds, port, type_data);
 	default:
 		return -EOPNOTSUPP;
 	}
