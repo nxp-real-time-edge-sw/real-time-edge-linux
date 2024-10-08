@@ -1323,8 +1323,8 @@ static int imx_rproc_probe(struct platform_device *pdev)
 	unsigned long cpus_bits;
 	int ret;
 
-	/* set some other name then imx */
-	rproc = rproc_alloc(dev, "imx-rproc", &imx_rproc_ops,
+	/* set node name to be remote processor name */
+	rproc = rproc_alloc(dev, np->name, &imx_rproc_ops,
 			    NULL, sizeof(*priv));
 	if (!rproc)
 		return -ENOMEM;
