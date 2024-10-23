@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright 2023 NXP
+ * Copyright 2023-2024 NXP
  */
 
 #include <linux/slab.h>
@@ -424,17 +424,83 @@ err:
 	return rc;
 }
 
-int netc_qci_set(struct netc_private *priv, struct netc_stream_filter *filter)
+static int netc_qci_sg_set(struct netc_private *priv, struct netc_stream_filter *filter)
 {
-	struct device *dev = priv->ds->dev;
-	struct netc_cmd_qci_set qci_set = {0};
+	struct action_gate_entry *entry = NULL;
+	struct netc_cmd_psfp_sg_p1 sg_p1 = {0};
+	struct netc_cmd_psfp_sg_p2 sg_p2 = {0};
+	struct netc_cmd_psfp_sgl sgl = {0};
 	int rc;
 
-	qci_set.stream_handle = filter->stream_handle;
-	qci_set.maxsdu = filter->qci.maxsdu;
+	sg_p1.index = filter->stream_handle;
+	sg_p1.base_time = filter->qci.gate.basetime;
+	sg_p1.cycle_time = filter->qci.gate.cycletime;
+	sg_p1.gcl_len = filter->qci.gate.num_entries;
+	rc = netc_xfer_set_cmd(priv, NETC_CMD_QCI_SG_SET_P1, &sg_p1, sizeof(sg_p1));
+	if (rc < 0)
+		return rc;
 
-	rc = netc_xfer_set_cmd(priv, NETC_CMD_QCI_SET,
-			&qci_set, sizeof(qci_set));
+	sg_p2.cycle_time_ext = filter->qci.gate.cycletimeext;
+	sg_p2.prio = filter->qci.gate.prio;
+	rc = netc_xfer_set_cmd(priv, NETC_CMD_QCI_SG_SET_P2, &sg_p2, sizeof(sg_p2));
+	if (rc < 0)
+		return rc;
+
+	for (int i = 0; i < filter->qci.gate.num_entries; i++) {
+		entry = &filter->qci.gate.entries[i];
+		sgl.interval = entry->interval;
+		sgl.maxoctets = entry->maxoctets;
+		sgl.ipv = entry->ipv;
+		sgl.gate_state = entry->gate_state;
+		rc = netc_xfer_set_cmd(priv, NETC_CMD_QCI_SG_SET_GCL, &sgl, sizeof(sgl));
+		if (rc < 0)
+			return rc;
+	}
+
+	return 0;
+}
+
+static int netc_qci_fm_set(struct netc_private *priv, struct netc_stream_filter *filter)
+{
+	struct netc_cmd_psfp_fm fm = {0};
+	int rc;
+
+	fm.index = filter->stream_handle;
+	fm.rate = filter->qci.police.rate;
+	fm.burst = filter->qci.police.burst;
+	rc = netc_xfer_set_cmd(priv, NETC_CMD_QCI_FM_SET, &fm, sizeof(fm));
+	if (rc < 0)
+		return rc;
+
+	return 0;
+}
+
+int netc_qci_set(struct netc_private *priv, struct netc_stream_filter *filter, int port)
+{
+	struct device *dev = priv->ds->dev;
+	struct netc_cmd_psfp_sf sf = {0};
+	int rc;
+
+	sf.stream_handle = filter->stream_handle;
+	sf.priority_spec = filter->qci.priority_spec;
+	sf.port = port;
+	sf.maxsdu = filter->qci.maxsdu;
+	if (filter->qci.gate.num_entries) {
+		sf.sg_enable = 1;
+		rc = netc_qci_sg_set(priv, filter);
+		if (rc < 0)
+			return rc;
+	}
+
+	if (filter->qci.police.rate) {
+		sf.fm_enable = 1;
+		rc = netc_qci_fm_set(priv, filter);
+		if (rc < 0)
+			return rc;
+	}
+
+	rc = netc_xfer_set_cmd(priv, NETC_CMD_QCI_SF_SET,
+			&sf, sizeof(sf));
 	if (rc < 0) {
 		dev_err(dev, "failed to set Qci setting: %d\n", rc);
 		return rc;
@@ -455,6 +521,23 @@ int netc_qci_del(struct netc_private *priv, uint16_t handle,
 		dev_err(dev, "failed to delete Qci setting: %d\n", rc);
 		return rc;
 	}
+
+	return 0;
+}
+
+int netc_qci_get(struct netc_private *priv, uint16_t handle, struct flow_stats *stats)
+{
+	struct netc_cmd_psfp_response psfp_resp = {0};
+	int rc;
+
+	rc = netc_xfer_get_cmd(priv, NETC_CMD_QCI_GET, handle,
+			       &psfp_resp, sizeof(psfp_resp));
+
+	if (rc != 0)
+		return rc;
+
+	stats->pkts = psfp_resp.pkts;
+	stats->drops = psfp_resp.drops;
 
 	return 0;
 }

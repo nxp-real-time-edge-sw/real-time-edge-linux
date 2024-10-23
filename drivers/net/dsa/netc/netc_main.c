@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright 2023 NXP
+ * Copyright 2023-2024 NXP
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -710,6 +710,7 @@ static int netc_cls_flower_add(struct dsa_switch *ds, int port,
 	struct netc_psfp_list *psfp;
 	struct netc_stream_filter filter = {0};
 	int cpu_port = dp->cpu_dp->index;
+	uint64_t rate;
 	int i, rc;
 	uint32_t handle;
 	bool set_stream = false;
@@ -764,6 +765,18 @@ static int netc_cls_flower_add(struct dsa_switch *ds, int port,
 			set_stream = true;
 			break;
 
+		case FLOW_ACTION_GATE:
+			stream.port_mask = BIT(port);
+			stream.action = NETC_STREAM_QCI;
+			filter.qci.gate.prio = a->gate.prio;
+			filter.qci.gate.basetime = a->gate.basetime;
+			filter.qci.gate.cycletime = a->gate.cycletime;
+			filter.qci.gate.cycletimeext = a->gate.cycletimeext;
+			filter.qci.gate.num_entries = a->gate.num_entries;
+			filter.qci.gate.entries = a->gate.entries;
+			set_stream = true;
+			break;
+
 		case FLOW_ACTION_POLICE:
 			stream.port_mask = BIT(port);
 			stream.action = NETC_STREAM_QCI;
@@ -774,6 +787,12 @@ static int netc_cls_flower_add(struct dsa_switch *ds, int port,
 				goto err;
 			}
 			filter.qci.maxsdu = a->police.mtu;
+
+			rate = a->police.rate_bytes_ps;
+			if (rate) {
+				filter.qci.police.burst = a->police.burst;
+				filter.qci.police.rate = rate * 8;
+			}
 			set_stream = true;
 			break;
 
@@ -837,7 +856,8 @@ static int netc_cls_flower_add(struct dsa_switch *ds, int port,
 			}
 			break;
 		case NETC_STREAM_QCI:
-			rc = netc_qci_set(priv, &filter);
+			filter.qci.priority_spec = stream.prio;
+			rc = netc_qci_set(priv, &filter, port);
 			if (rc) {
 				goto err;
 			}
@@ -924,7 +944,22 @@ err:
 static int netc_cls_flower_stats(struct dsa_switch *ds, int port,
 			       struct flow_cls_offload *cls, bool ingress)
 {
-	dev_dbg(ds->dev, "Not support query flower stats!\n");
+	struct netc_private *priv = ds->priv;
+	struct netc_psfp_list *psfp;
+	struct netc_stream *stream;
+	struct flow_stats stats;
+	int rc;
+
+	psfp = &priv->psfp;
+	stream = netc_stream_table_get(&psfp->stream_list, cls->cookie);
+
+	rc = netc_qci_get(priv, stream->handle, &stats);
+	if (rc < 0)
+		return rc;
+
+	flow_stats_update(&cls->stats, 0x0, stats.pkts, stats.drops, 0x0,
+			  FLOW_ACTION_HW_STATS_IMMEDIATE);
+
 	return 0;
 }
 

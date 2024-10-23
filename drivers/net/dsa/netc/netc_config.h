@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright 2023 NXP
+ * Copyright 2023-2024 NXP
  */
 
 #ifndef _NETC_CONFIG_H
 #define _NETC_CONFIG_H
 
+#include <net/tc_act/tc_gate.h>
 #include <net/pkt_sched.h>
 #include <linux/types.h>
 #include <asm/types.h>
@@ -79,7 +80,11 @@ enum netc_cmd {
 	NETC_CMD_QBV_GET,
 	NETC_CMD_QBU_SET,
 	NETC_CMD_QBU_GET,
-	NETC_CMD_QCI_SET,
+	NETC_CMD_QCI_SF_SET,
+	NETC_CMD_QCI_SG_SET_P1,
+	NETC_CMD_QCI_SG_SET_P2,
+	NETC_CMD_QCI_SG_SET_GCL,
+	NETC_CMD_QCI_FM_SET,
 	NETC_CMD_QCI_DEL,
 	NETC_CMD_QCI_GET,
 	NETC_CMD_FRER_SG_SET,
@@ -292,6 +297,19 @@ enum tc_frer_tag_action {
 
 struct netc_stream_qci {
        uint32_t     maxsdu;
+       int8_t priority_spec;
+       struct {
+	       int32_t prio;
+	       uint64_t basetime;
+	       uint32_t cycletime;
+	       uint32_t cycletimeext;
+	       uint16_t num_entries;
+	       struct action_gate_entry *entries;
+       } gate;
+       struct {
+	       uint32_t burst;
+	       uint64_t rate;
+       } police;
 };
 
 struct netc_stream_filter {
@@ -332,6 +350,49 @@ struct netc_cmd_frer_sr {
 	uint8_t reserved[3];
 };
 
+struct netc_cmd_psfp_sg_p1 {
+	uint64_t base_time;
+	uint32_t cycle_time;
+	uint16_t gcl_len;
+	uint16_t index;
+};
+
+struct netc_cmd_psfp_sg_p2 {
+	uint32_t cycle_time_ext;
+	int32_t prio;
+	uint8_t reserved[8];
+};
+
+struct netc_cmd_psfp_sgl {
+	uint32_t interval;
+	int32_t maxoctets;
+	int32_t ipv;
+	uint8_t gate_state;
+	uint8_t reserved[3];
+};
+
+struct netc_cmd_psfp_fm {
+	uint64_t rate;
+	uint32_t burst;
+	uint16_t index;
+	uint8_t reserved[2];
+};
+
+struct netc_cmd_psfp_sf {
+	uint32_t	maxsdu;
+	uint16_t	stream_handle;
+	int8_t		priority_spec;
+	uint8_t		sg_enable;
+	uint8_t		fm_enable;
+	uint8_t		port;
+	uint8_t		reserved[6];
+};
+
+struct netc_cmd_psfp_response {
+	uint64_t pkts;
+	uint64_t drops;
+};
+
 struct netc_cmd_priority_map {
 	uint8_t port;
 	uint8_t reset;
@@ -357,13 +418,6 @@ struct netc_cmd_qbv_set_p2 {
 	struct netc_cmd_qbv_gcl gcl;
 	uint32_t cycle_time_ext;
 	uint8_t reserved[4];
-};
-
-/* command data for NETC_CMD_QCI_SET */
-struct netc_cmd_qci_set {
-	uint32_t	maxsdu;
-	uint16_t	stream_handle;
-	uint8_t		reserved[2];
 };
 
 struct netc_cmd_port_ethtool_stats {
@@ -467,10 +521,10 @@ int netc_frer_sg_del(struct netc_private *priv, uint16_t handle, uint32_t port);
 int netc_frer_sr_del(struct netc_private *priv, uint16_t handle, uint32_t port);
 
 int netc_qci_set(struct netc_private *priv,
-		struct netc_stream_filter *filter);
+		struct netc_stream_filter *filter, int port);
 int netc_qci_del(struct netc_private *priv,
 		uint16_t handle, uint32_t port);
-
+int netc_qci_get(struct netc_private *priv, uint16_t handle, struct flow_stats *stats);
 int netc_qbv_set(struct netc_private *priv, int port, int enable,
 		 struct tc_taprio_qopt_offload *taprio);
 int netc_port_priority_map(struct netc_private *priv, int port, uint8_t *map, int reset);
