@@ -382,18 +382,13 @@ int netc_qbv_set(struct netc_private *priv, int port, int enable,
 		goto err;
 
 	qbvconf_p2.cycle_time_ext = taprio->cycle_time_extension;
-	if (qbvconf_p1.gcl_len > 0) {
-		qbvconf_p2.gcl.interval = taprio->entries[0].interval;
-		qbvconf_p2.gcl.gate_mask = taprio->entries[0].gate_mask;
-		qbvconf_p2.gcl.operation = taprio->entries[0].command;
-	}
 	rc = netc_xfer_set_cmd(priv, NETC_CMD_QBV_SET_P2, &qbvconf_p2, sizeof(qbvconf_p2));
 	if (rc < 0)
 		goto err;
 
 	offset = 0;
 	memset(buffer, 0, sizeof(buffer));
-	for (int i = 1; i < qbvconf_p1.gcl_len; i++) {
+	for (int i = 0; i < qbvconf_p1.gcl_len; i++) {
 		qbvconf_gcl.interval = taprio->entries[i].interval;
 		qbvconf_gcl.gate_mask = taprio->entries[i].gate_mask;
 		qbvconf_gcl.operation = taprio->entries[i].command;

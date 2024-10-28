@@ -77,7 +77,6 @@ enum netc_cmd {
 	NETC_CMD_QBV_SET_P1 = 0x3000,
 	NETC_CMD_QBV_SET_P2,
 	NETC_CMD_QBV_SET_GCL,
-	NETC_CMD_QBV_GET,
 	NETC_CMD_QBU_SET,
 	NETC_CMD_QBU_GET,
 	NETC_CMD_QCI_SF_SET,
@@ -414,9 +413,8 @@ struct netc_cmd_qbv_set_p1 {
 };
 
 struct netc_cmd_qbv_set_p2 {
-	struct netc_cmd_qbv_gcl gcl;
 	uint32_t cycle_time_ext;
-	uint8_t reserved[4];
+	uint8_t reserved[12];
 };
 
 struct netc_cmd_port_ethtool_stats {
