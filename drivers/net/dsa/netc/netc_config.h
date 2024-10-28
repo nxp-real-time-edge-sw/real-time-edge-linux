@@ -395,9 +395,8 @@ struct netc_cmd_psfp_response {
 
 struct netc_cmd_priority_map {
 	uint8_t port;
-	uint8_t reset;
 	uint8_t map[8];
-	uint8_t reserved[6];
+	uint8_t reserved[7];
 };
 
 struct netc_cmd_qbv_gcl {
@@ -527,5 +526,5 @@ int netc_qci_del(struct netc_private *priv,
 int netc_qci_get(struct netc_private *priv, uint16_t handle, struct flow_stats *stats);
 int netc_qbv_set(struct netc_private *priv, int port, int enable,
 		 struct tc_taprio_qopt_offload *taprio);
-int netc_port_priority_map(struct netc_private *priv, int port, uint8_t *map, int reset);
+int netc_port_priority_map(struct netc_private *priv, int port, uint8_t *map);
 #endif /* _NETC_CONFIG_H */

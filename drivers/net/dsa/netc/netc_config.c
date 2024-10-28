@@ -340,13 +340,12 @@ int netc_streamid_del(struct netc_private *priv, uint16_t stream_handle)
 	return 0;
 }
 
-int netc_port_priority_map(struct netc_private *priv, int port, uint8_t *map, int reset)
+int netc_port_priority_map(struct netc_private *priv, int port, uint8_t *map)
 {
 	struct netc_cmd_priority_map prio_map;
 	int rc;
 
 	prio_map.port = port;
-	prio_map.reset = reset;
 	memcpy(prio_map.map, map, sizeof(prio_map.map));
 
 	rc = netc_xfer_set_cmd(priv, NETC_CMD_PRIORITY_MAP_SET, &prio_map, sizeof(prio_map));

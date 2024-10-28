@@ -970,7 +970,6 @@ static int netc_port_mqprio_set(struct dsa_switch *ds, int port,
 	struct tc_mqprio_qopt *qopt = &mqprio->qopt;
 	struct dsa_port *dp;
 	uint8_t *map;
-	int reset;
 
 	dp = dsa_to_port(ds, port);
 
@@ -979,12 +978,10 @@ static int netc_port_mqprio_set(struct dsa_switch *ds, int port,
 	else
 		map = netc_default_priority_map;
 
-	if (qopt->num_tc)
-		reset = 0;
-	else
-		reset = 1;
+	if (!qopt->num_tc)
+		map = netc_default_priority_map;
 
-	return netc_port_priority_map(priv, port, map, reset);
+	return netc_port_priority_map(priv, port, map);
 }
 
 static int netc_port_taprio_set(struct dsa_switch *ds, int port,
