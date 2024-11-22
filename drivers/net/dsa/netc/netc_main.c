@@ -951,7 +951,15 @@ static int netc_cls_flower_stats(struct dsa_switch *ds, int port,
 	int rc;
 
 	psfp = &priv->psfp;
+
+	mutex_lock(&psfp->lock);
+
 	stream = netc_stream_table_get(&psfp->stream_list, cls->cookie);
+	if (!stream) {
+		mutex_unlock(&psfp->lock);
+		return 0;
+	}
+	mutex_unlock(&psfp->lock);
 
 	rc = netc_qci_get(priv, stream->handle, &stats);
 	if (rc < 0)
