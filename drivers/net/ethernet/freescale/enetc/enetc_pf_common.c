@@ -370,7 +370,8 @@ void enetc_pf_netdev_setup(struct enetc_si *si, struct net_device *ndev,
 	ndev->priv_flags |= IFF_UNICAST_FLT;
 	ndev->xdp_features = NETDEV_XDP_ACT_BASIC | NETDEV_XDP_ACT_REDIRECT |
 			     NETDEV_XDP_ACT_NDO_XMIT | NETDEV_XDP_ACT_RX_SG |
-			     NETDEV_XDP_ACT_NDO_XMIT_SG;
+			     NETDEV_XDP_ACT_NDO_XMIT_SG |
+			     NETDEV_XDP_ACT_XSK_ZEROCOPY;
 
 	if (is_enetc_rev1(si)) {
 		priv->max_frags_bd = ENETC_MAX_SKB_FRAGS;
@@ -379,6 +380,8 @@ void enetc_pf_netdev_setup(struct enetc_si *si, struct net_device *ndev,
 		priv->active_offloads |= ENETC_F_CHECKSUM;
 		priv->shared_tx_rings = true;
 	}
+
+	ndev->xdp_zc_max_segs = priv->max_frags_bd;
 
 	if (si->hw_features & ENETC_SI_F_RSC)
 		ndev->hw_features |= NETIF_F_LRO;
