@@ -174,6 +174,12 @@ struct enetc_bdr {
 	dma_addr_t tso_headers_dma;
 } ____cacheline_aligned_in_smp;
 
+struct enetc_xdp_buff {
+	struct xdp_buff xdp;
+	struct enetc_bdr *rx_ring;
+	union enetc_rx_bd *rxbd;
+};
+
 static inline void enetc_bdr_idx_inc(struct enetc_bdr *bdr, int *i)
 {
 	if (unlikely(++*i == bdr->bd_count))
@@ -515,6 +521,7 @@ struct enetc_ndev_priv {
 
 /* PTP driver exports */
 extern int enetc_phc_index;
+extern const struct xdp_metadata_ops enetc_xdp_metadata_ops;
 
 /* SI common */
 u32 enetc_port_mac_rd(struct enetc_si *si, u32 reg);

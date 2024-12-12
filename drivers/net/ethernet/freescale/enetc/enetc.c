@@ -1362,27 +1362,37 @@ static int enetc_refill_rx_ring(struct enetc_bdr *rx_ring, const int buff_cnt)
 	return j;
 }
 
-static void enetc_get_rx_tstamp(struct net_device *ndev,
-				union enetc_rx_bd *rxbd,
-				struct sk_buff *skb)
+static u64 enetc_get_rx_timestamp(union enetc_rx_bd *rxbd,
+				  struct enetc_hw *hw)
+{
+	u32 lo, hi, tstamp_lo;
+	u64 tstamp;
+
+	lo = enetc_rd_reg_hot(hw->reg + ENETC_SICTR0);
+	hi = enetc_rd_reg_hot(hw->reg + ENETC_SICTR1);
+	tstamp_lo = le32_to_cpu(rxbd->ext.tstamp);
+	if (lo <= tstamp_lo)
+		hi -= 1;
+
+	tstamp = (u64)hi << 32 | tstamp_lo;
+
+	return tstamp;
+}
+
+static void enetc_skb_rx_timestamp(struct net_device *ndev,
+				   union enetc_rx_bd *rxbd,
+				   struct sk_buff *skb)
 {
 	struct skb_shared_hwtstamps *shhwtstamps = skb_hwtstamps(skb);
 	struct enetc_ndev_priv *priv = netdev_priv(ndev);
 	struct enetc_hw *hw = &priv->si->hw;
-	u32 lo, hi, tstamp_lo;
-	u64 tstamp;
+	u64 ns;
 
 	if (le16_to_cpu(rxbd->r.flags) & ENETC_RXBD_FLAG_TSTMP) {
-		lo = enetc_rd_reg_hot(hw->reg + ENETC_SICTR0);
-		hi = enetc_rd_reg_hot(hw->reg + ENETC_SICTR1);
 		rxbd = enetc_rxbd_ext(rxbd);
-		tstamp_lo = le32_to_cpu(rxbd->ext.tstamp);
-		if (lo <= tstamp_lo)
-			hi -= 1;
-
-		tstamp = (u64)hi << 32 | tstamp_lo;
+		ns = enetc_get_rx_timestamp(rxbd, hw);
 		memset(shhwtstamps, 0, sizeof(*shhwtstamps));
-		shhwtstamps->hwtstamp = ns_to_ktime(tstamp);
+		shhwtstamps->hwtstamp = ns_to_ktime(ns);
 	}
 }
 
@@ -1431,7 +1441,7 @@ static void enetc_get_offloads(struct enetc_bdr *rx_ring,
 
 	if ((priv->active_offloads & ENETC_F_RX_TSTAMP) &&
 	    enetc_ptp_clock_is_enabled(priv->si))
-		enetc_get_rx_tstamp(rx_ring->ndev, rxbd, skb);
+		enetc_skb_rx_timestamp(rx_ring->ndev, rxbd, skb);
 }
 
 /* This gets called during the non-XDP NAPI poll cycle as well as on XDP_PASS,
@@ -1861,7 +1871,7 @@ static void enetc_map_rx_buff_to_xdp(struct enetc_bdr *rx_ring, int i,
 	rx_swbd->len = size;
 
 	xdp_prepare_buff(xdp_buff, hard_start - rx_ring->buffer_offset,
-			 rx_ring->buffer_offset, size, false);
+			 rx_ring->buffer_offset, size, true);
 }
 
 static void enetc_add_rx_buff_to_xdp(struct enetc_bdr *rx_ring, int i,
@@ -1992,7 +2002,8 @@ static int enetc_clean_rx_ring_xdp(struct enetc_bdr *rx_ring,
 	while (likely(rx_frm_cnt < work_limit)) {
 		union enetc_rx_bd *rxbd, *orig_rxbd;
 		int orig_i, orig_cleaned_cnt;
-		struct xdp_buff xdp_buff;
+		struct enetc_xdp_buff ctx;
+		struct xdp_buff *xdp_buff;
 		struct sk_buff *skb;
 		u32 bd_status;
 		int err;
@@ -2013,8 +2024,12 @@ static int enetc_clean_rx_ring_xdp(struct enetc_bdr *rx_ring,
 		orig_cleaned_cnt = cleaned_cnt;
 		orig_i = i;
 
+		xdp_buff = &ctx.xdp;
+		ctx.rxbd = orig_rxbd;
+		ctx.rx_ring = rx_ring;
+
 		enetc_build_xdp_buff(rx_ring, bd_status, &rxbd, &i,
-				     &cleaned_cnt, &xdp_buff);
+				     &cleaned_cnt, xdp_buff);
 
 		/* When set, the outer VLAN header is extracted and reported
 		 * in the receive buffer descriptor. So rx_byte_cnt should
@@ -2022,9 +2037,9 @@ static int enetc_clean_rx_ring_xdp(struct enetc_bdr *rx_ring,
 		 */
 		if (bd_status & ENETC_RXBD_FLAG_VLAN)
 			rx_byte_cnt += VLAN_HLEN;
-		rx_byte_cnt += xdp_get_buff_len(&xdp_buff);
+		rx_byte_cnt += xdp_get_buff_len(xdp_buff);
 
-		xdp_act = bpf_prog_run_xdp(prog, &xdp_buff);
+		xdp_act = bpf_prog_run_xdp(prog, xdp_buff);
 
 		switch (xdp_act) {
 		default:
@@ -2064,7 +2079,7 @@ static int enetc_clean_rx_ring_xdp(struct enetc_bdr *rx_ring,
 			}
 
 			enetc_rx_swbd_to_xdp_tx_swbd(rx_ring, orig_i, i, tx_ring);
-			frm_len = xdp_get_buff_len(&xdp_buff);
+			frm_len = xdp_get_buff_len(xdp_buff);
 			enetc_xdp_tx_swbd_to_tx_bd(tx_ring, frm_len, xdp_tx_bd_cnt);
 
 			tx_ring->stats.xdp_tx++;
@@ -2085,7 +2100,7 @@ static int enetc_clean_rx_ring_xdp(struct enetc_bdr *rx_ring,
 
 			break;
 		case XDP_REDIRECT:
-			err = xdp_do_redirect(rx_ring->ndev, &xdp_buff, prog);
+			err = xdp_do_redirect(rx_ring->ndev, xdp_buff, prog);
 			if (unlikely(err)) {
 				enetc_xdp_drop(rx_ring, orig_i, i);
 				rx_ring->stats.xdp_redirect_failures++;
@@ -2134,6 +2149,7 @@ static int enetc_refill_rx_ring_xsk(struct enetc_bdr *rx_ring, int buff_cnt)
 	u32 batch;
 	int i, j;
 
+	XSK_CHECK_PRIV_TYPE(struct enetc_xdp_buff);
 	xsk_buffs = rx_ring->xdp.xsk_batch;
 	batch = xsk_buff_alloc_batch(pool, xsk_buffs, buff_cnt);
 	if (unlikely(!batch))
@@ -2367,6 +2383,11 @@ static void enetc_xsk_tx_swbd_to_tx_bd(struct enetc_bdr *tx_ring,
 	tx_ring->next_to_use = i;
 }
 
+static struct enetc_xdp_buff *enetc_xsk_buff_to_ctx(struct xdp_buff *xsk_buff)
+{
+	return (struct enetc_xdp_buff *)xsk_buff;
+}
+
 static int enetc_clean_rx_ring_xsk(struct enetc_bdr *rx_ring,
 				   struct napi_struct *napi,
 				   int work_limit)
@@ -2379,6 +2400,7 @@ static int enetc_clean_rx_ring_xsk(struct enetc_bdr *rx_ring,
 	union enetc_rx_bd *rxbd, *orig_rxbd;
 	int rx_frm_cnt = 0, rx_byte_cnt = 0;
 	int cpu = smp_processor_id();
+	struct enetc_xdp_buff *ctx;
 	struct enetc_bdr *tx_ring;
 	struct xdp_buff *xsk_buff;
 	int cleaned_cnt, err, i;
@@ -2414,6 +2436,10 @@ static int enetc_clean_rx_ring_xsk(struct enetc_bdr *rx_ring,
 						&rxbd, &cleaned_cnt);
 		if (!xsk_buff)
 			break;
+
+		ctx = enetc_xsk_buff_to_ctx(xsk_buff);
+		ctx->rx_ring = rx_ring;
+		ctx->rxbd = orig_rxbd;
 
 		rx_byte_cnt += xdp_get_buff_len(xsk_buff);
 		if (bd_status & ENETC_RXBD_FLAG_VLAN)
@@ -2586,6 +2612,37 @@ static bool enetc_xsk_xmit(struct net_device *ndev, u32 queue,
 
 	return budget != batch;
 }
+
+static int enetc_xdp_rx_timestamp(const struct xdp_md *ctx, u64 *timestamp)
+{
+	const struct enetc_xdp_buff *_ctx = (void *)ctx;
+	struct enetc_bdr *rx_ring = _ctx->rx_ring;
+	union enetc_rx_bd *rxbd = _ctx->rxbd;
+	struct enetc_ndev_priv *priv;
+
+	if (!rx_ring->ext_en)
+		return -ENODATA;
+
+	priv = netdev_priv(rx_ring->ndev);
+	if ((priv->active_offloads & ENETC_F_RX_TSTAMP) &&
+	    le16_to_cpu(rxbd->r.flags) & ENETC_RXBD_FLAG_TSTMP) {
+		struct enetc_hw *hw = &priv->si->hw;
+		u64 ns;
+
+		rxbd = enetc_rxbd_ext(rxbd);
+		ns = enetc_get_rx_timestamp(rxbd, hw);
+		*timestamp = ns_to_ktime(ns);
+
+		return 0;
+	}
+
+	return -ENODATA;
+}
+
+const struct xdp_metadata_ops enetc_xdp_metadata_ops = {
+	.xmo_rx_timestamp	= enetc_xdp_rx_timestamp,
+};
+EXPORT_SYMBOL_GPL(enetc_xdp_metadata_ops);
 
 static int enetc_poll(struct napi_struct *napi, int budget)
 {

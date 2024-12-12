@@ -382,6 +382,7 @@ void enetc_pf_netdev_setup(struct enetc_si *si, struct net_device *ndev,
 	}
 
 	ndev->xdp_zc_max_segs = priv->max_frags_bd;
+	ndev->xdp_metadata_ops = &enetc_xdp_metadata_ops;
 
 	if (si->hw_features & ENETC_SI_F_RSC)
 		ndev->hw_features |= NETIF_F_LRO;
