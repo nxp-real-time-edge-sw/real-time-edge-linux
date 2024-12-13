@@ -115,6 +115,15 @@ struct enetc_xsk_cb {
 	struct xsk_buff_pool *pool;
 };
 
+/* Currently, we only need the TCP and UDP type */
+enum enetc_l4_type {
+	ENETC_L4T_UDP = 0,
+	ENETC_L4T_TCP,
+	ENETC_L4T_OTHER,
+};
+
+#define ENETC_L4_TYPE_NUM		28
+
 #define ENETC_RX_RING_DEFAULT_SIZE	2048
 #define ENETC_TX_RING_DEFAULT_SIZE	2048
 #define ENETC_DEFAULT_TX_WORK		(ENETC_TX_RING_DEFAULT_SIZE / 2)
