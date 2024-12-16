@@ -618,6 +618,7 @@ static void enetc_vf_netdev_setup(struct enetc_si *si, struct net_device *ndev,
 
 	ndev->xdp_zc_max_segs = priv->max_frags_bd;
 	ndev->xdp_metadata_ops = &enetc_xdp_metadata_ops;
+	ndev->xsk_tx_metadata_ops = &enetc_xsk_tx_metadata_ops;
 
 	/* If driver handles unicast address filtering, it should set
 	 * IFF_UNICAST_FLT in its priv_flags. (Refer to the description

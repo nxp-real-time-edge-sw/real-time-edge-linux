@@ -38,6 +38,7 @@ struct enetc_tx_swbd {
 	u16 page_offset;	/* valid only if is_xdp_tx */
 	u16 len;
 	enum dma_data_direction dir;
+	struct xsk_tx_metadata_compl xsk_meta;
 	u8 is_dma_page:1;
 	u8 check_wb:1;
 	u8 do_twostep_tstamp:1;
@@ -187,6 +188,18 @@ struct enetc_xdp_buff {
 	struct xdp_buff xdp;
 	struct enetc_bdr *rx_ring;
 	union enetc_rx_bd *rxbd;
+};
+
+struct enetc_metadata_req {
+	struct enetc_bdr *tx_ring;
+	union enetc_tx_bd *txbd;
+	int *index;
+	bool txbd_update;
+};
+
+struct enetc_xsk_tx_complete {
+	struct enetc_bdr *tx_ring;
+	union enetc_tx_bd *txbd;
 };
 
 static inline void enetc_bdr_idx_inc(struct enetc_bdr *bdr, int *i)
@@ -531,6 +544,7 @@ struct enetc_ndev_priv {
 /* PTP driver exports */
 extern int enetc_phc_index;
 extern const struct xdp_metadata_ops enetc_xdp_metadata_ops;
+extern const struct xsk_tx_metadata_ops enetc_xsk_tx_metadata_ops;
 
 /* SI common */
 u32 enetc_port_mac_rd(struct enetc_si *si, u32 reg);
