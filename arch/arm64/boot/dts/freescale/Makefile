@@ -541,6 +541,7 @@ dtb-$(CONFIG_ARCH_MXC) += imx91-9x9-qsb-i2c-spi-slave.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx91-9x9-qsb-i3c.dtb
 
 dtb-$(CONFIG_ARCH_MXC) += imx943-evk.dtb
+dtb-$(CONFIG_ARCH_MXC) += imx943-evk-hms-dsa.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx943-evk-mqs.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx943-evk-sdwifi.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx943-evk-sgmii.dtb
