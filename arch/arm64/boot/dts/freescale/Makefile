@@ -667,6 +667,7 @@ dtb-$(CONFIG_ARCH_MXC) += imx93-14x14-evk.dtb \
 			  imx93-14x14-evk-virtio-net-ca55.dtb \
 			  imx93-14x14-evk-virtio-net-cm33.dtb \
 			  imx93-14x14-evk-uart-sharing-cm33.dtb \
+			  imx93-14x14-evk-multicore-rpmsg.dtb \
 			  imx93-14x14-evk-multicore-rtos.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk.dtb \
 			  imx93-11x11-evk-harpoon-virtio-net.dtb \
@@ -681,6 +682,7 @@ dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk.dtb \
 			  imx93-11x11-evk-virtio-net-ca55.dtb \
 			  imx93-11x11-evk-virtio-net-cm33.dtb \
 			  imx93-11x11-evk-ecat.dtb \
+			  imx93-11x11-evk-multicore-rpmsg.dtb \
 			  imx93-11x11-evk-multicore-rtos.dtb
 
 imx93-11x11-evk-boe-wxga-lvds-panel-dtbs := imx93-11x11-evk.dtb imx93-11x11-evk-boe-wxga-lvds-panel.dtbo
