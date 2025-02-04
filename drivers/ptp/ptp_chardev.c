@@ -502,6 +502,7 @@ long ptp_ioctl(struct posix_clock_context *pccontext, unsigned int cmd,
 {
 	struct ptp_clock *ptp = container_of(pccontext->clk, struct ptp_clock, clock);
 	void __user *argptr;
+	struct ptp_convert_timestamps convert_ts;
 
 	if (in_compat_syscall() && cmd != PTP_ENABLE_PPS && cmd != PTP_ENABLE_PPS2)
 		arg = (unsigned long)compat_ptr(arg);
@@ -571,6 +572,28 @@ long ptp_ioctl(struct posix_clock_context *pccontext, unsigned int cmd,
 			return -EOPNOTSUPP;
 		return ptp_sys_offset_extended(ptp, argptr,
 					       ptp->info->getcyclesx64);
+	case PTP_CONVERT_TIMESTAMPS:
+		int err;
+
+		if (copy_from_user(&convert_ts, (void __user *)arg, sizeof(convert_ts))) {
+			return -EFAULT;
+		}
+
+		if (convert_ts.n_ts > PTP_MAX_CONVERT_TS_NUM) {
+			return -EINVAL;
+		}
+
+		if (ptp->is_virtual_clock)
+			err = ptp_vclock_convert_timestamps(ptp, convert_ts.src_ts, convert_ts.n_ts,
+						      convert_ts.dst_phc_index, convert_ts.dst_ts);
+		else
+			err = ptp_clock_convert_timestamps(ptp, convert_ts.src_ts, convert_ts.n_ts,
+						     convert_ts.dst_phc_index, convert_ts.dst_ts);
+
+		if (!err && copy_to_user((void __user *)arg, &convert_ts, sizeof(convert_ts)))
+			err = -EFAULT;
+
+		return err;
 	default:
 		return -ENOTTY;
 	}
