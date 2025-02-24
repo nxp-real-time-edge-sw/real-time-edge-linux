@@ -978,6 +978,7 @@ static int netc_port_mqprio_set(struct dsa_switch *ds, int port,
 	struct tc_mqprio_qopt *qopt = &mqprio->qopt;
 	struct dsa_port *dp;
 	uint8_t *map;
+	int rc;
 
 	dp = dsa_to_port(ds, port);
 
@@ -988,6 +989,10 @@ static int netc_port_mqprio_set(struct dsa_switch *ds, int port,
 
 	if (!qopt->num_tc)
 		map = netc_default_priority_map;
+
+	rc = netc_port_set_preemptible_tcs(ds, port, mqprio->preemptible_tcs);
+	if (rc)
+		return rc;
 
 	return netc_port_priority_map(priv, port, map);
 }
@@ -1253,6 +1258,8 @@ static const struct dsa_switch_ops netc_switch_ops = {
 	.cls_flower_del		= netc_cls_flower_del,
 	.cls_flower_stats	= netc_cls_flower_stats,
 	.port_setup_tc		= netc_port_setup_tc,
+	.set_mm             = netc_port_set_mm,
+	.get_mm             = netc_port_get_mm,
 };
 
 static const struct of_device_id netc_dt_ids[];

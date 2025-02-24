@@ -29,6 +29,8 @@
 #define NETC_CMD_DIR_SHIFT 31
 #define NETC_CMD_LEN_SHIFT 16
 
+#define NETC_GET_MM_MAX_VERIFY_TIME     (128U)
+
 enum  netc_spi_rw_mode {
 	SPI_READ = 0,
 	SPI_WRITE = 1,
@@ -78,7 +80,8 @@ enum netc_cmd {
 	NETC_CMD_QBV_SET_P2,
 	NETC_CMD_QBV_SET_GCL,
 	NETC_CMD_QBU_SET,
-	NETC_CMD_QBU_GET,
+	NETC_CMD_MM_SET,
+	NETC_CMD_MM_GET,
 	NETC_CMD_QCI_SF_SET,
 	NETC_CMD_QCI_SG_SET_P1,
 	NETC_CMD_QCI_SG_SET_P2,
@@ -417,6 +420,24 @@ struct netc_cmd_qbv_set_p2 {
 	uint8_t reserved[12];
 };
 
+struct netc_cmd_set_get_mm {
+	uint32_t verify_time;
+	uint32_t add_frag_size;
+	uint8_t verify_enabled;
+	uint8_t verify_status;
+	uint8_t tx_enabled;
+	uint8_t pmac_enabled;
+	uint8_t tx_active;
+	uint8_t port;
+	uint8_t reserved[2];
+};
+
+struct netc_cmd_qbu_set {
+	uint8_t preemption_mask;
+	uint8_t port;
+	uint8_t reserved[2];
+};
+
 struct netc_cmd_port_ethtool_stats {
 	uint64_t values[NETC_ETHTOOL_STATS_NUM_MAX];
 };
@@ -525,4 +546,12 @@ int netc_qci_get(struct netc_private *priv, uint16_t handle, struct flow_stats *
 int netc_qbv_set(struct netc_private *priv, int port, int enable,
 		 struct tc_taprio_qopt_offload *taprio);
 int netc_port_priority_map(struct netc_private *priv, int port, uint8_t *map);
+
+int netc_port_set_preemptible_tcs(struct dsa_switch *ds, int port,
+								  unsigned long preemptible_tcs);
+int netc_port_set_mm(struct dsa_switch *ds, int port,
+					 struct ethtool_mm_cfg *cfg,
+					 struct netlink_ext_ack *extack);
+int netc_port_get_mm(struct dsa_switch *ds, int port,
+					 struct ethtool_mm_state *state);
 #endif /* _NETC_CONFIG_H */
