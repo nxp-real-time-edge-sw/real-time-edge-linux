@@ -235,7 +235,7 @@ struct ptp_convert_timestamps {
 	_IOWR(PTP_CLK_MAGIC, 17, struct ptp_sys_offset_precise)
 #define PTP_SYS_OFFSET_EXTENDED2 \
 	_IOWR(PTP_CLK_MAGIC, 18, struct ptp_sys_offset_extended)
-#define PTP_CONVERT_TIMESTAMPS  _IOW(PTP_CLK_MAGIC, 19, struct ptp_convert_timestamps)
+#define PTP_CONVERT_TIMESTAMPS  _IOW(PTP_CLK_MAGIC, 21, struct ptp_convert_timestamps)
 
 struct ptp_extts_event {
 	struct ptp_clock_time t; /* Time event occured. */
