@@ -394,6 +394,8 @@ struct enetc_si {
 	DECLARE_BITMAP(vlan_ht_filter, ENETC_VLAN_HT_SIZE);
 	DECLARE_BITMAP(active_vlans, VLAN_N_VID);
 	struct enetc_cbs *ecbs;
+
+	void *priv;  /* used by enetc_pci_uio driver */
 };
 
 #define ENETC_SI_ALIGN	32
