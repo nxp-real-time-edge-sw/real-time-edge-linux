@@ -1383,7 +1383,24 @@ static int imx_rproc_sm_detect_mode(struct rproc *rproc)
 
 static int imx_rproc_psci_detect_mode(struct rproc *rproc)
 {
-	rproc->state = RPROC_OFFLINE;
+	struct imx_rproc *priv = rproc->priv;
+	unsigned int cpu;
+	int cpu_aff;
+
+	rproc->state = RPROC_DETACHED;
+	for_each_cpu(cpu, &priv->cpus) {
+		cpu_aff = psci_ops.affinity_info(cpu_logical_map(cpu), 0);
+		if (cpu_aff == PSCI_0_2_AFFINITY_LEVEL_OFF) {
+			rproc->state = RPROC_OFFLINE;
+			break;
+		}
+
+		/* in psci on state but running Linux */
+		if (cpu_online(cpu)) {
+			rproc->state = RPROC_OFFLINE;
+			break;
+		}
+	}
 
 	return 0;
 }
@@ -1479,6 +1496,17 @@ static int imx_rproc_probe(struct platform_device *pdev)
 	ret = imx_rproc_addr_init(priv, pdev);
 	if (ret)
 		return dev_err_probe(dev, ret, "failed on imx_rproc_addr_init\n");
+
+	/* Init priv->cpus before detect mode */
+	ret = of_property_read_u32(dev->of_node, "fsl,cpus-bits", &cpus);
+	if (ret) {
+		cpumask_clear(&priv->cpus);
+	} else {
+		cpus_bits = cpus;
+		bitmap_copy(cpumask_bits(&priv->cpus), &cpus_bits,
+				min((unsigned int)nr_cpumask_bits,
+				    (unsigned int)sizeof(unsigned long)));
+	}
 
 	ret = imx_rproc_detect_mode(priv);
 	if (ret)
