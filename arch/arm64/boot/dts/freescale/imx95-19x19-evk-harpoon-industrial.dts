@@ -23,3 +23,15 @@
 &flexcan2_phy {
 	status = "disabled";
 };
+
+&enetc_port0 {
+	status = "disabled";
+};
+
+&ethphy0 {
+	status = "disabled";
+};
+
+&netc_timer {
+	status = "disabled";
+};
