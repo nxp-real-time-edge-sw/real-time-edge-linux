@@ -343,6 +343,7 @@ void enetc_pf_netdev_setup(struct enetc_si *si, struct net_device *ndev,
 	ndev->netdev_ops = ndev_ops;
 	enetc_set_ethtool_ops(ndev);
 	ndev->watchdog_timeo = 5 * HZ;
+	ndev->max_mtu = ENETC_MAX_MTU;
 
 	ndev->hw_features = NETIF_F_SG | NETIF_F_RXCSUM |
 			    NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_HW_VLAN_CTAG_RX |
@@ -372,10 +373,8 @@ void enetc_pf_netdev_setup(struct enetc_si *si, struct net_device *ndev,
 			     NETDEV_XDP_ACT_NDO_XMIT_SG;
 
 	if (is_enetc_rev1(si)) {
-		ndev->max_mtu = ENETC_MAX_MTU;
 		priv->max_frags_bd = ENETC_MAX_SKB_FRAGS;
 	} else {
-		ndev->max_mtu = ENETC4_MAX_MTU;
 		priv->max_frags_bd = ENETC4_MAX_SKB_FRAGS;
 		priv->active_offloads |= ENETC_F_CHECKSUM;
 		priv->shared_tx_rings = true;

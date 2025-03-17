@@ -584,12 +584,11 @@ static void enetc_vf_netdev_setup(struct enetc_si *si, struct net_device *ndev,
 	ndev->netdev_ops = ndev_ops;
 	enetc_set_ethtool_ops(ndev);
 	ndev->watchdog_timeo = 5 * HZ;
+	ndev->max_mtu = ENETC_MAX_MTU;
 
 	if (is_enetc_rev1(si)) {
-		ndev->max_mtu = ENETC_MAX_MTU;
 		priv->max_frags_bd = ENETC_MAX_SKB_FRAGS;
 	} else {
-		ndev->max_mtu = ENETC4_MAX_MTU;
 		priv->active_offloads |= ENETC_F_CHECKSUM;
 		priv->max_frags_bd = ENETC4_MAX_SKB_FRAGS;
 		priv->shared_tx_rings = true;

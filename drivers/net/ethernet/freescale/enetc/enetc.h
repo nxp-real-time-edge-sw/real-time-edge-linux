@@ -23,13 +23,6 @@
 #define ENETC_MAX_MTU		(ENETC_MAC_MAXFRM_SIZE - \
 				(ETH_FCS_LEN + ETH_HLEN + VLAN_HLEN))
 
-/* i.MX95 supports jumbo frame, but it is recommended to set the max frame
- * size to 2000 bytes.
- */
-#define ENETC4_MAC_MAXFRM_SIZE	2000
-#define ENETC4_MAX_MTU		(ENETC4_MAC_MAXFRM_SIZE - \
-				(ETH_FCS_LEN + ETH_HLEN + VLAN_HLEN))
-
 #define ENETC_CBD_DATA_MEM_ALIGN 64
 
 #define ENETC_INT_NAME_MAX	(IFNAMSIZ + 8)

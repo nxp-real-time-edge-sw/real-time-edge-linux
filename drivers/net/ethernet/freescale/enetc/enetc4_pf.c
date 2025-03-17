@@ -49,7 +49,7 @@ static void enetc4_pf_set_tc_msdu(struct enetc_hw *hw, u32 *max_sdu)
 	int tc;
 
 	for (tc = 0; tc < 8; tc++) {
-		u32 val = ENETC4_MAC_MAXFRM_SIZE;
+		u32 val = ENETC_MAC_MAXFRM_SIZE;
 
 		if (max_sdu[tc])
 			val = max_sdu[tc] + VLAN_ETH_HLEN;
@@ -61,7 +61,7 @@ static void enetc4_pf_set_tc_msdu(struct enetc_hw *hw, u32 *max_sdu)
 
 static void enetc4_pf_reset_tc_msdu(struct enetc_hw *hw)
 {
-	u32 val = ENETC4_MAC_MAXFRM_SIZE;
+	u32 val = ENETC_MAC_MAXFRM_SIZE;
 	int tc;
 
 	val = u32_replace_bits(val, SDU_TYPE_MPDU, PTCTMSDUR_SDU_TYPE);
@@ -75,7 +75,7 @@ static void enetc4_set_trx_frame_size(struct enetc_pf *pf)
 	struct enetc_si *si = pf->si;
 
 	enetc_port_mac_wr(si, ENETC4_PM_MAXFRM(0),
-			  ENETC_SET_MAXFRM(ENETC4_MAC_MAXFRM_SIZE));
+			  ENETC_SET_MAXFRM(ENETC_MAC_MAXFRM_SIZE));
 
 	enetc4_pf_reset_tc_msdu(&si->hw);
 }
@@ -639,8 +639,8 @@ static void enetc4_set_tx_pause(struct enetc_pf *pf, int num_rxbdr, bool tx_paus
 		 * smaller frames) have accumulated in the FIFO waiting to be
 		 * DMAed to the RX ring.
 		 */
-		pause_on_thresh = 3 * ENETC4_MAC_MAXFRM_SIZE;
-		pause_off_thresh = 1 * ENETC4_MAC_MAXFRM_SIZE;
+		pause_on_thresh = 3 * ENETC_MAC_MAXFRM_SIZE;
+		pause_off_thresh = 1 * ENETC_MAC_MAXFRM_SIZE;
 	}
 
 	enetc_port_mac_wr(pf->si, ENETC4_PM_PAUSE_QUANTA(0), init_quanta);
