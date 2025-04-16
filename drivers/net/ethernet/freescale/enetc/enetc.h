@@ -554,8 +554,6 @@ struct enetc_ndev_priv {
 	 */
 	struct mutex		mm_lock;
 
-	bool fp_enabled_admin;
-
 	struct clk *ref_clk; /* RGMII/RMII reference clock */
 	u64 sysclk_freq; /* NETC system clock frequency */
 
