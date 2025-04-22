@@ -9,6 +9,7 @@
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <linux/vmalloc.h>
+#include <linux/fsl/netc_global.h>
 #include <net/ip6_checksum.h>
 #include <net/pkt_sched.h>
 #include <net/tso.h>
@@ -1232,10 +1233,18 @@ static void enetc_get_tx_tstamp(struct enetc_hw *hw, union enetc_tx_bd *txbd,
 static void enetc_tstamp_tx(struct sk_buff *skb, u64 tstamp)
 {
 	struct skb_shared_hwtstamps shhwtstamps;
+	u64 ns;
 
 	if (skb_shinfo(skb)->tx_flags & SKBTX_IN_PROGRESS) {
 		memset(&shhwtstamps, 0, sizeof(shhwtstamps));
-		shhwtstamps.hwtstamp = ns_to_ktime(tstamp);
+
+		if (is_enetc_rev4(priv->si) &&
+			!(skb->sk && READ_ONCE(skb->sk->sk_tsflags) & SOF_TIMESTAMPING_BIND_PHC)) {
+			netc_timer_ptp_convert(priv->timer_pdev, tstamp, &ns, true, false);
+			shhwtstamps.hwtstamp = ns_to_ktime(ns);
+		} else
+			shhwtstamps.hwtstamp = ns_to_ktime(tstamp);
+
 		skb_txtime_consumed(skb);
 		skb_tstamp_tx(skb, &shhwtstamps);
 	}
@@ -2021,6 +2030,18 @@ int enetc_xdp_xmit(struct net_device *ndev, int num_frames,
 	return xdp_tx_frm_cnt;
 }
 EXPORT_SYMBOL_GPL(enetc_xdp_xmit);
+
+ktime_t enetc_get_tstamp(struct net_device *ndev,
+				const struct skb_shared_hwtstamps *hwtstamps,
+				bool cycles)
+{
+	struct enetc_ndev_priv *priv = netdev_priv(ndev);
+	u64 ns;
+
+	netc_timer_ptp_convert(priv->timer_pdev, hwtstamps->hwtstamp, &ns, true, cycles);
+
+	return ns_to_ktime(ns);
+}
 
 static void enetc_map_rx_buff_to_xdp(struct enetc_bdr *rx_ring, int i,
 				     struct xdp_buff *xdp_buff, u16 size)
