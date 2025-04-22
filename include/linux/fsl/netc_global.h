@@ -38,8 +38,26 @@ static inline void netc_write(void __iomem *reg, u32 val)
 
 #if IS_ENABLED(CONFIG_PTP_NETC_V4_TIMER)
 u64 netc_timer_get_current_time(struct pci_dev *timer_dev);
+u64 netc_timer_get_cycles(struct pci_dev *timer_pdev);
+u64 netc_timer_cycles_to_ns(struct pci_dev *timer_pdev, u64 cycles);
+int netc_timer_ptp_convert(struct pci_dev *timer_pdev, u64 ts_src, u64 *ts_dst, bool ts_in_cycles, bool cycles);
 #else
 static inline u64 netc_timer_get_current_time(struct pci_dev *timer_dev)
+{
+	return 0;
+}
+
+static inline u64 netc_timer_get_cycles(struct pci_dev *timer_dev)
+{
+	return 0;
+}
+
+static u64 netc_timer_cycles_to_ns(struct pci_dev *timer_pdev, u64 cycles)
+{
+	return 0;
+}
+
+static int netc_timer_ptp_convert(struct pci_dev *timer_pdev, u64 ts_src, u64 *ts_dst, bool ts_in_cycles, bool cycles)
 {
 	return 0;
 }

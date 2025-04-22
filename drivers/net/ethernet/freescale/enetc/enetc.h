@@ -405,6 +405,11 @@ static inline bool is_enetc_rev1(struct enetc_si *si)
 	return si->pdev->revision == ENETC_REV1;
 }
 
+static inline bool is_enetc_rev4(struct enetc_si *si)
+{
+	return si->pdev->revision == ENETC_REV4;
+}
+
 static inline void *enetc_si_priv(const struct enetc_si *si)
 {
 	return (char *)si + ALIGN(sizeof(struct enetc_si), ENETC_SI_ALIGN);
@@ -562,6 +567,8 @@ struct enetc_ndev_priv {
 	/* Kernel stack and XDP share the tx rings */
 	bool shared_tx_rings;
 
+	struct pci_dev *timer_pdev; /* timer device */
+
 	u32 ipt_wol_eid;
 	int wolopts;
 
@@ -611,6 +618,9 @@ int enetc_setup_bpf(struct net_device *ndev, struct netdev_bpf *bpf);
 int enetc_xdp_xmit(struct net_device *ndev, int num_frames,
 		   struct xdp_frame **frames, u32 flags);
 int enetc_xsk_wakeup(struct net_device *ndev, u32 queue, u32 flags);
+ktime_t enetc_get_tstamp(struct net_device *ndev,
+				const struct skb_shared_hwtstamps *hwtstamps,
+				bool cycles);
 
 int enetc_hwtstamp_get(struct net_device *ndev,
 		       struct kernel_hwtstamp_config *config);
