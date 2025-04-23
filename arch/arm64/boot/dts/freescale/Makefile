@@ -923,7 +923,7 @@ dtb-$(CONFIG_ARCH_MXC) += imx943-orangebox-netc-m33.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-flexspi-m2.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-mqs.dtb
-dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-multicore-rtos.dtb
+dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-multicore-rtos.dtb imx95-15x15-evk-multicore-rpmsg.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-aud-hat.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-8mic-reve.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-ab2.dtb
@@ -1008,7 +1008,7 @@ imx95-19x19-evk-root-dtbs := imx95-19x19-evk.dtb imx95-jailhouse-root.dtbo
 dtb-$(CONFIG_ARCH_MXC) += imx95-19x19-evk-root.dtb
 imx95-15x15-evk-root-dtbs := imx95-15x15-evk.dtb imx95-jailhouse-root.dtbo
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-root.dtb \
-			  imx95-19x19-evk-multicore-rtos.dtb
+			  imx95-19x19-evk-multicore-rtos.dtb imx95-19x19-evk-multicore-rpmsg.dtb
 
 dtb-$(CONFIG_ARCH_MXC) += imx95-jailhouse-inmate.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-19x19-frdm-pro-inmate.dtb
