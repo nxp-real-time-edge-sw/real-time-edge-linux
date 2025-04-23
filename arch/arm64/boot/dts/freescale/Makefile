@@ -951,7 +951,7 @@ dtb-$(CONFIG_ARCH_MXC) += imx943-orangebox-netc-m33.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-flexspi-m2.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-mqs.dtb
-dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-multicore-rtos.dtb
+dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-multicore-rtos.dtb imx95-15x15-evk-multicore-rpmsg.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-aud-hat.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-8mic-reve.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-root.dtb imx95-15x15-evk-inmate.dtb imx95-15x15-evk-harpoon.dtb imx95-15x15-evk-harpoon-industrial.dtb
@@ -1031,7 +1031,7 @@ dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-rpmsg.dtb
 
 dtb-$(CONFIG_ARCH_MXC) += imx95-19x19-evk.dtb imx95-19x19-evk-root.dtb imx95-19x19-evk-inmate.dtb \
 			  imx95-19x19-evk-harpoon.dtb imx95-19x19-evk-harpoon-industrial.dtb \
-			  imx95-19x19-evk-multicore-rtos.dtb \
+			  imx95-19x19-evk-multicore-rtos.dtb imx95-19x19-evk-multicore-rpmsg.dtb \
 			  imx95-19x19-evk-lpspi-slave.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-19x19-evk-tja1104-rgmii.dtb imx95-19x19-evk-tja1104-rmii.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-19x19-evk-netc-rpmsg.dtb
