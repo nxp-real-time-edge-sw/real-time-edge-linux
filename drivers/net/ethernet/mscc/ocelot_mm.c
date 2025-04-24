@@ -175,6 +175,25 @@ void ocelot_mm_irq(struct ocelot *ocelot)
 }
 EXPORT_SYMBOL_GPL(ocelot_mm_irq);
 
+void ocelot_mm_link_state_update(struct ocelot *ocelot, int port, bool link)
+{
+	struct ocelot_port *ocelot_port = ocelot->ports[port];
+	struct ocelot_mm_state *mm = &ocelot->mm[port];
+
+	if (mm->tx_enabled) {
+		if (link)
+			ocelot_port_rmwl(ocelot_port,
+					 DEV_MM_CONFIG_ENABLE_CONFIG_MM_TX_ENA,
+					 DEV_MM_CONFIG_ENABLE_CONFIG_MM_TX_ENA,
+					 DEV_MM_ENABLE_CONFIG);
+		else
+			ocelot_port_rmwl(ocelot_port, 0,
+					 DEV_MM_CONFIG_ENABLE_CONFIG_MM_TX_ENA,
+					 DEV_MM_ENABLE_CONFIG);
+
+	}
+}
+
 int ocelot_port_set_mm(struct ocelot *ocelot, int port,
 		       struct ethtool_mm_cfg *cfg,
 		       struct netlink_ext_ack *extack)
