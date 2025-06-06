@@ -182,6 +182,14 @@ struct ptp_system_timestamp {
  *                   parameter index: index of the periodic output signal channel.
  *                   parameter on: caller passes one to enable or zero to disable.
  *
+ * @converttime: Requests driver to convert timestamps between free running
+ *               cycles counter and hardware clock time units. Only drivers that
+ *               implement getcycles64() may implement this callback as in such
+ *               case the hardware clock is not forced to be free-running.
+ *               parameter src_ts: Holds the source timestamp to convert.
+ *               parameter dst_ts: Holds the result.
+ *               parameter cycles: specifies if the destination ts is ns (false) or cycles (true).
+ *
  * Drivers should embed their ptp_clock_info within a private
  * structure, obtaining a reference to it using container_of().
  *
@@ -223,6 +231,8 @@ struct ptp_clock_info {
 	long (*do_aux_work)(struct ptp_clock_info *ptp);
 	int (*perout_loopback)(struct ptp_clock_info *ptp, unsigned int index,
 			       int on);
+	int (*converttime)(struct ptp_clock_info *ptp, struct timespec64 src_ts,
+			   struct timespec64 *dst_ts, bool cycles);
 };
 
 struct ptp_clock;
