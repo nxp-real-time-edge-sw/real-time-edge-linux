@@ -1,0 +1,15 @@
+
+
+/dts-v1/;
+
+#include "imx8mp.dtsi"
+#include "imx8mp-edc-brd01-pinmux.dtsi"        
+
+/ {
+    model = "AxisB EDC i.MX8MP Board";
+    compatible = "axisb,imx8mp-edc-brd01", "fsl,imx8mp";
+
+    chosen {
+        stdout-path = &uart2;
+    };
+};
