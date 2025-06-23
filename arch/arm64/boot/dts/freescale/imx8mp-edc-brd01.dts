@@ -11,7 +11,7 @@
   compatible = "axisb,imx8mp-edc-brd01", "fsl,imx8mp";
 
   chosen {
-    stdout-path = &uart2;
+    stdout-path = &uart1;
   };
 
   gpio-leds {
@@ -173,6 +173,8 @@
   pinctrl-0 = <&BOARD_InitPins>;
   phy-mode = "rgmii-id";
   phy-handle = <&ethphy0>;
+	snps,mtl-tx-config = <&mtl_tx_setup>;
+	snps,mtl-rx-config = <&mtl_rx_setup>;
   status = "okay";
 
   mdio {
@@ -464,34 +466,37 @@
 }
 
 &uart1 {
-  /* BT */
   pinctrl-names = "default";
   pinctrl-0 = <&BOARD_InitPins>;
-  assigned-clocks = <&clk IMX8MP_CLK_UART1>;
-  assigned-clock-parents = <&clk IMX8MP_SYS_PLL1_80M>;
-  fsl,uart-has-rtscts;
   status = "okay";
-
-  bluetooth {
-    compatible = "nxp,88w8997-bt";
-  };
 };
 
 &uart2 {
-  /* console */
   pinctrl-names = "default";
   pinctrl-0 = <&BOARD_InitPins>;
+  status = "disabled";
+};
+
+&uart3 {
+  /* Bluetooth */
+  pinctrl-names = "default";
+  pinctrl-0 = <&BOARD_InitPins>;
+  assigned-clocks = <&clk IMX8MP_CLK_UART3>;
+  assigned-clock-parents = <&clk IMX8MP_SYS_PLL1_80M>;
+  fsl,uart-has-rtscts;
   status = "okay";
+  
+  // Quectel Bluetooth driver
 };
 
 &usb3_phy0 {
-  fsl,phy-tx-vref-tune = <0xe>;
-  fsl,phy-tx-preemp-amp-tune = <3>;
-  fsl,phy-tx-vboost-level = <5>;
-  fsl,phy-comp-dis-tune = <7>;
-  fsl,pcs-tx-deemph-3p5db = <0x21>;
-  fsl,phy-pcs-tx-swing-full = <0x7f>;
-  status = "okay";
+	fsl,phy-tx-vref-tune = <0xe>;
+	fsl,phy-tx-preemp-amp-tune = <3>;
+	fsl,phy-tx-vboost-level = <5>;
+	fsl,phy-comp-dis-tune = <7>;
+	fsl,pcs-tx-deemph-3p5db = <0x21>;
+	fsl,phy-pcs-tx-swing-full = <0x7f>;
+	status = "okay";
 };
 
 &usb3_0 {
@@ -532,23 +537,16 @@
   status = "okay";
 };
 
-&uart3 {
-  pinctrl-names = "default";
-  pinctrl-0 = <&BOARD_InitPins>;
-  assigned-clocks = <&clk IMX8MP_CLK_UART3>;
-  assigned-clock-parents = <&clk IMX8MP_SYS_PLL1_80M>;
-  fsl,uart-has-rtscts;
-  status = "okay";
-};
 
 &usdhc2 {
   assigned-clocks = <&clk IMX8MP_CLK_USDHC2>;
   assigned-clock-rates = <400000000>;
   pinctrl-names = "default", "state_100mhz", "state_200mhz";
   pinctrl-0 = <&BOARD_InitPins>;
-  pinctrl-1 = <&pinctrl_usdhc2_100mhz>, <&pinctrl_usdhc2_gpio>;
-  pinctrl-2 = <&pinctrl_usdhc2_200mhz>, <&pinctrl_usdhc2_gpio>;
-  cd-gpios = <&gpio2 12 GPIO_ACTIVE_LOW>;
+  pinctrl-1 = <&BOARD_InitPins>;
+  pinctrl-2 = <&BOARD_InitPins>;
+  /* pinctrl-1 = <&pinctrl_usdhc2_100mhz>, <&pinctrl_usdhc2_gpio>; */
+  /* pinctrl-2 = <&pinctrl_usdhc2_200mhz>, <&pinctrl_usdhc2_gpio>; */
   vmmc-supply = <&reg_usdhc2_vmmc>;
   bus-width = <4>;
   status = "okay";
