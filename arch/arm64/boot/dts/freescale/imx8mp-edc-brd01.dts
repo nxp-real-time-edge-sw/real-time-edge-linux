@@ -38,28 +38,6 @@
     clock-frequency = <100000000>;
   };
 
-  reg_can1_stby: regulator-can1-stby {
-    compatible = "regulator-fixed";
-    regulator-name = "can1-stby";
-    pinctrl-names = "default";
-    pinctrl-0 = <&BOARD_InitPins>;
-    regulator-min-microvolt = <3300000>;
-    regulator-max-microvolt = <3300000>;
-    gpio = <&gpio5 5 GPIO_ACTIVE_HIGH>;
-    enable-active-high;
-  };
-
-  reg_can2_stby: regulator-can2-stby {
-    compatible = "regulator-fixed";
-    regulator-name = "can2-stby";
-    pinctrl-names = "default";
-    pinctrl-0 = <&BOARD_InitPins>;
-    regulator-min-microvolt = <3300000>;
-    regulator-max-microvolt = <3300000>;
-    gpio = <&gpio4 27 GPIO_ACTIVE_HIGH>;
-    enable-active-high;
-  };
-
   reg_pcie0: regulator-pcie {
     compatible = "regulator-fixed";
     pinctrl-names = "default";
@@ -94,78 +72,16 @@
     gpio = <&gpio2 19 GPIO_ACTIVE_HIGH>;
     enable-active-high;
   };
-
-  reg_audio_pwr: regulator-audio-pwr {
-    compatible = "regulator-fixed";
-    regulator-name = "audio-pwr";
-    regulator-min-microvolt = <3300000>;
-    regulator-max-microvolt = <3300000>;
-    gpio = <&gpio4 29 GPIO_ACTIVE_HIGH>;
-    enable-active-high;
-    regulator-always-on;
-  };
-
-  sound-wm8960 {
-    compatible = "fsl,imx-audio-wm8960";
-    model = "wm8960-audio";
-    audio-cpu = <&sai3>;
-    audio-codec = <&codec>;
-    audio-asrc = <&easrc>;
-    hp-det-gpio = <&gpio4 28 0>;
-    audio-routing =
-      "Headphone Jack", "HP_L",
-        "Headphone Jack", "HP_R",
-          "Ext Spk", "SPK_LP",
-            "Ext Spk", "SPK_LN",
-              "Ext Spk", "SPK_RP",
-                "Ext Spk", "SPK_RN",
-                  "LINPUT1", "Mic Jack",
-                    "LINPUT3", "Mic Jack",
-                      "Mic Jack", "MICB";
-  };
-
-  sound-micfil {
-    compatible = "fsl,imx-audio-card";
-    model = "micfil-audio";
-    pri-dai-link {
-      link-name = "micfil hifi";
-      format = "i2s";
-      cpu {
-        sound-dai = <&micfil>;
-      };
-    };
-  };
-
-  sound-xcvr {
-    compatible = "fsl,imx-audio-card";
-    model = "imx-audio-xcvr";
-    pri-dai-link {
-      link-name = "XCVR PCM";
-      cpu {
-        sound-dai = <&xcvr>;
-      };
-    };
-  };
-
-  cbtl04gp {
-    compatible = "nxp,cbtl04gp";
-    pinctrl-names = "default";
-    pinctrl-0 = <&BOARD_InitPins>;
-    switch-gpios = <&gpio4 20 GPIO_ACTIVE_LOW>;
-    orientation-switch;
-
-    port {
-      usb3_data_ss: endpoint {
-        remote-endpoint = <&typec_con_ss>;
-      };
-    };
-  };
 };
 
 /* Use the BOARD_InitPins group already defined in the .dtsi */
 &iomuxc {
   pinctrl-names = "default";
   pinctrl-0 = <&BOARD_InitPins>;
+};
+
+&dsp {
+	status = "okay";
 };
 
 &eqos {
@@ -259,6 +175,7 @@
   };
 };
 
+// TODO: Need to add AD2437 dts node
 &i2c1 {
   clock-frequency = <400000>;
   pinctrl-names = "default";
@@ -353,6 +270,7 @@
   pinctrl-0 = <&BOARD_InitPins>;
   status = "okay";
 
+  // TODO: Check voltage values
   pmic@25 {
     compatible = "nxp,pca9450c";
     reg = <0x25>;
@@ -459,10 +377,11 @@
     };
   };
 
-  nx20p3483: load-switch@50 {
-    compatible = "nxp,nx20p3483uk";
-    reg = <0x72>;
-  };
+  // TODO: Check again before removing
+  /* nx20p3483: load-switch@50 { */
+  /*   compatible = "nxp,nx20p3483uk"; */
+  /*   reg = <0x72>; */
+  /* }; */
 }
 
 &uart1 {
@@ -536,7 +455,6 @@
   dr_mode = "host";
   status = "okay";
 };
-
 
 &usdhc2 {
   assigned-clocks = <&clk IMX8MP_CLK_USDHC2>;
