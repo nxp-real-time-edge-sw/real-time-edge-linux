@@ -50,9 +50,9 @@
 		regulator-max-microvolt = <3300000>;
 		gpio = <&gpio2 6 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
-    // Toggle the following to enable
+    	// Toggle the following to enable
 		/* regulator-always-on; */
-    status = "disabled"
+    	status = "disabled";
 	};
 
 	reg_usb_vbus: regulator-vbus {
@@ -64,9 +64,9 @@
 		regulator-max-microvolt = <5000000>;
 		gpio = <&gpio1 14 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
-    // Toggle the following to enable
+		// Toggle the following to enable
 		/* regulator-always-on; */
-    status = "disabled"
+		status = "disabled";
 	};
 
 	reg_usdhc2_vmmc: regulator-usdhc2 {

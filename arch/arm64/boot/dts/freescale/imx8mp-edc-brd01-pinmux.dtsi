@@ -15,11 +15,7 @@ external_user_signals: {}
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS ***********
  */
 
-
-/dts-v1/;
-
 #include "imx8mp.dtsi"
-#include "pins-imx8mp.h"
 
 / {
     model = "NXP i.MX 8M Plus Based Custom Board";
@@ -29,10 +25,10 @@ external_user_signals: {}
         #address-cells = <1>;
         #size-cells = <1>;
 
-        iomuxc: iomuxc@30330000 {
-            compatible = "fsl,imx8mp-iomuxc";
-            reg = <0x30330000 0x4000>;
-        };
+        //iomuxc: iomuxc@30330000 {
+            //compatible = "fsl,imx8mp-iomuxc";
+            //reg = <0x30330000 0x4000>;
+        //};
     };
 };
 
