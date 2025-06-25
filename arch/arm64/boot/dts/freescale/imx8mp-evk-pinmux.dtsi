@@ -1,4 +1,4 @@
-/* Pinmux definitions for imx8mp evaluation kit */bin.usr-is-merged/
+/* Pinmux definitions for imx8mp evaluation kit */
 
 &iomuxc {
 	pinctrl-names = "default";
