@@ -15,23 +15,6 @@ external_user_signals: {}
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS ***********
  */
 
-#include "imx8mp.dtsi"
-
-/ {
-    model = "NXP i.MX 8M Plus Based Custom Board";
-    compatible = "fsl,imx8mp-custom-board", "fsl,imx8mp-evk", "fsl,imx8mp";
-
-    soc {
-        #address-cells = <1>;
-        #size-cells = <1>;
-
-        //iomuxc: iomuxc@30330000 {
-            //compatible = "fsl,imx8mp-iomuxc";
-            //reg = <0x30330000 0x4000>;
-        //};
-    };
-};
-
 &iomuxc {
     pinctrl-names = "default_iomuxc";
     pinctrl-0 = <&BOARD_InitPins>;
