@@ -367,7 +367,6 @@
 #endif
 
 &uart1 {
-  /* BT */
 	pinctrl-names = "default";
 #if BRD_REV == IMX8MP_EVK
 	pinctrl-0 = <&pinctrl_uart1>;
@@ -378,10 +377,6 @@
 	assigned-clock-parents = <&clk IMX8MP_SYS_PLL1_80M>;
 	fsl,uart-has-rtscts;
 	status = "disabled";
-
-	bluetooth {
-		compatible = "nxp,88w8997-bt";
-	};
 };
 
 &uart2 {
