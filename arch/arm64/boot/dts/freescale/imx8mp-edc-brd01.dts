@@ -110,7 +110,7 @@
   };
 
   mtl_tx_setup: tx-queues-config {
-    snps,tx-queues-to-use = <5>;
+    snps,tx-queues-to-use = <4>;
     snps,tx-sched-sp;
 
     queue0 {
@@ -140,7 +140,7 @@
   };
 
   mtl_rx_setup: rx-queues-config {
-    snps,rx-queues-to-use = <5>;
+    snps,rx-queues-to-use = <4>;
     snps,rx-sched-sp;
 
     queue0 {
@@ -166,12 +166,6 @@
       snps,priority = <0x8>;
       snps,map-to-dma-channel = <3>;
     };
-
-    /* queue4 { */
-    /* 	snps,dcb-algorithm; */
-    /* 	snps,priority = <0xf0>; */
-    /* 	snps,map-to-dma-channel = <4>; */
-    /* }; */
   };
 };
 

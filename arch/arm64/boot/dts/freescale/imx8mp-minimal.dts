@@ -42,7 +42,7 @@
 #if BRD_REV == IMX8MP_EVK
 		pinctrl-0 = <&pinctrl_pcie0_reg>;
 #elif BRD_REV == EDC_BRD01
-    pinctrl-0 = <&BOARD_InitPins>;
+		pinctrl-0 = <&BOARD_InitPins>;
 #endif
 		regulator-name = "MPCIE_3V3";
 		regulator-min-microvolt = <3300000>;
@@ -58,9 +58,9 @@
 		compatible = "regulator-fixed";
 		pinctrl-names = "default";
 #if BRD_REV == IMX8MP_EVK
-		pinctrl-0 = <&pinctrl_usb1_vbus>;
+    	pinctrl-0 = <&pinctrl_usb1_vbus>;
 #elif BRD_REV == EDC_BRD01
-    pinctrl-0 = <&BOARD_InitPins>;
+    	pinctrl-0 = <&BOARD_InitPins>;
 #endif
 		regulator-name = "USB_VBUS";
 		regulator-min-microvolt = <5000000>;
@@ -76,9 +76,9 @@
 		compatible = "regulator-fixed";
 		pinctrl-names = "default";
 #if BRD_REV == IMX8MP_EVK
-		pinctrl-0 = <&pinctrl_reg_usdhc2_vmmc>;
+    	pinctrl-0 = <&pinctrl_reg_usdhc2_vmmc>;
 #elif BRD_REV == EDC_BRD01
-    pinctrl-0 = <&BOARD_InitPins>;
+    	pinctrl-0 = <&BOARD_InitPins>;
 #endif
 		regulator-name = "VSD_3V3";
 		regulator-min-microvolt = <3300000>;
@@ -121,7 +121,7 @@
 	};
 
 	mtl_tx_setup: tx-queues-config {
-		snps,tx-queues-to-use = <5>;
+		snps,tx-queues-to-use = <4>;
 		snps,tx-sched-sp;
 
 		queue0 {
@@ -146,7 +146,7 @@
 	};
 
 	mtl_rx_setup: rx-queues-config {
-		snps,rx-queues-to-use = <5>;
+		snps,rx-queues-to-use = <4>;
 		snps,rx-sched-sp;
 
 		queue0 {
