@@ -333,7 +333,7 @@
       buck6: BUCK6 {
         regulator-name = "BUCK6";
         regulator-min-microvolt = <1045000>;
-        regulator-max-microvolt = <1.155000>;
+        regulator-max-microvolt = <1155000>;
         regulator-boot-on;
         regulator-always-on;
       };
