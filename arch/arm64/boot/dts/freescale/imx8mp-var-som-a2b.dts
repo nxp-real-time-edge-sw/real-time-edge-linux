@@ -32,35 +32,34 @@
 };
 
 &iomuxc {
-	pinctrl_i2c5: i2c5grp {
-		fsl,pins = <
-			MX8MP_IOMUXC_HDMI_DDC_SCL__I2C5_SCL				0x400001c2
-			MX8MP_IOMUXC_HDMI_DDC_SDA__I2C5_SDA				0x400001c2
-		>;
-	};
-
 	pinctrl_sai2: sai2grp {
 		fsl,pins = <
 			MX8MP_IOMUXC_SAI2_TXFS__AUDIOMIX_SAI2_TX_SYNC			0xd6
 			MX8MP_IOMUXC_SAI2_TXC__AUDIOMIX_SAI2_TX_BCLK			0xd6
 			MX8MP_IOMUXC_SAI2_TXD0__AUDIOMIX_SAI2_TX_DATA00			0xd6
 			MX8MP_IOMUXC_SAI2_RXD0__AUDIOMIX_SAI2_TX_DATA01			0xd6
-			MX8MP_IOMUXC_SAI2_MCLK__AUDIOMIX_SAI2_MCLK			    0xd6
+			MX8MP_IOMUXC_SAI2_MCLK__AUDIOMIX_SAI2_MCLK			0xd6
 		>;
 	};
 
-    gpio4_21: gpio_perf_grp {
-        fsl,pins = <
+	pinctrl_sai7: sai7grp {
+		fsl,pins = <
+			MX8MP_IOMUXC_ECSPI2_MOSI__AUDIOMIX_SAI7_TX_DATA00		0xd6
+		>;
+	};
+
+	gpio4_21: gpio_perf_grp {
+		fsl,pins = <
 			MX8MP_IOMUXC_SAI2_RXFS__GPIO4_IO21			            0xd6
-        >;
-    };
+		>;
+	};
 };
 
 &dsp {
 	compatible = "fsl,imx8mp-hifi4";
 	reg = <0x0 0x3B6E8000 0x0 0x88000>;
 	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_sai2>, <&pinctrl_i2c5>, <&pinctrl_uart4>, <&gpio4_21>;
+	pinctrl-0 = <&pinctrl_sai2>, <&pinctrl_uart4>, <&gpio4_21>, <&pinctrl_sai7>;
 	assigned-clocks = <&clk IMX8MP_CLK_SAI2>;
 	assigned-clock-parents = <&clk IMX8MP_AUDIO_PLL1_OUT>;
 	assigned-clock-rates = <24576000>;
