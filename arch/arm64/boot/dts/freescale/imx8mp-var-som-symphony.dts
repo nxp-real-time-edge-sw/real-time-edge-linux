@@ -333,6 +333,12 @@
 	/* scl-gpios = <&gpio3 26 GPIO_ACTIVE_HIGH>; */
 	/* sda-gpios = <&gpio3 27 GPIO_ACTIVE_HIGH>; */
 	status = "okay";
+	i2c-mux@70 {
+            compatible = "nxp,pca9548";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            reg = <0x70>;
+    };
 };
 
 &flexcan2 {
