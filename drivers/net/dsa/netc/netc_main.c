@@ -766,6 +766,8 @@ static void netc_port_set_max_frame_size(struct netc_port *port,
 
 	val = PM_MAXFRAM & max_frame_size;
 	netc_mac_port_wr(port, NETC_PM_MAXFRM(0), val);
+
+	port->maxfrm = val;
 }
 
 void netc_switch_fixed_config(struct netc_switch *priv)
@@ -787,16 +789,19 @@ static void netc_port_set_tc_max_sdu(struct netc_port *port,
 void netc_port_set_all_tc_msdu(struct netc_port *port, u32 *max_sdu)
 {
 	u32 overhead = ETH_FCS_LEN + VLAN_ETH_HLEN;
+	u32 msdu;
 	int tc;
 
 	if (dsa_port_is_cpu(port->dp))
 		overhead += NETC_TAG_MAX_LEN;
 
 	for (tc = 0; tc < NETC_TC_NUM; tc++) {
-		u32 msdu = NETC_MAX_FRAME_LEN;
-
-		if (max_sdu && max_sdu[tc])
+		if (max_sdu == NULL)
+			msdu = NETC_MAX_FRAME_LEN;
+		else if (max_sdu[tc])
 			msdu = max_sdu[tc] + overhead;
+		else
+			msdu = port->maxfrm;
 
 		if (msdu > NETC_MAX_FRAME_LEN)
 			msdu = NETC_MAX_FRAME_LEN;
