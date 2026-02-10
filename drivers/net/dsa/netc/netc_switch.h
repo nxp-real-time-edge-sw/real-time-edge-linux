@@ -141,6 +141,7 @@ struct netc_port {
 
 	u32 speed;
 	phy_interface_t phy_mode;
+	u32 maxfrm;
 
 	u16 pvid;
 	u16 vlan_aware:1;
