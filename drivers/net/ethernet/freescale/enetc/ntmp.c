@@ -279,6 +279,7 @@ u32 ntmp_lookup_free_words(unsigned long *bitmap, u32 size, u32 num_words)
 
 	return entry_id;
 }
+EXPORT_SYMBOL_GPL(ntmp_lookup_free_words);
 
 void ntmp_clear_words_bitmap(unsigned long *bitmap, u32 entry_id, u32 num_words)
 {
@@ -287,6 +288,7 @@ void ntmp_clear_words_bitmap(unsigned long *bitmap, u32 entry_id, u32 num_words)
 
 	bitmap_clear(bitmap, entry_id, num_words);
 }
+EXPORT_SYMBOL_GPL(ntmp_clear_words_bitmap);
 
 static int ntmp_alloc_data_mem(struct ntmp_dma_buf *data, void **buf_align)
 {
