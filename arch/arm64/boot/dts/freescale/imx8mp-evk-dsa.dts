@@ -9,78 +9,16 @@
 
 &ecspi2 {
 	status = "okay";
+	#include "imxrt1180-hms-switch.dtsi"
+};
 
-	hmsdsa: ethernet-switch@0 {
-		reg = <0x0>;
-		#address-cells = <1>;
-		#size-cells = <0>;
-		compatible = "nxp,imxrt1180-hms";
-		/* 500 kHz */
-		spi-max-frequency = <500000>;
+&hmsdsa {
+	spi-max-frequency = <500000>;
+};
 
-		hmsdsa_ports: ports {
-			#address-cells = <1>;
-			#size-cells = <0>;
-
-			hmsdsa_port0: port@0 {
-				label = "hms0p0";
-				reg = <0>;
-				phy-mode = "sgmii";
-
-				fixed-link {
-					speed = <100>;
-					full-duplex;
-				};
-			};
-
-			hmsdsa_port1: port@1 {
-				label = "hms0p1";
-				reg = <1>;
-				phy-mode = "sgmii";
-
-				fixed-link {
-					speed = <1000>;
-					full-duplex;
-				};
-			};
-
-			hmsdsa_port2: port@2 {
-				label = "hms0p2";
-				reg = <2>;
-				phy-mode = "sgmii";
-
-				fixed-link {
-					speed = <1000>;
-					full-duplex;
-				};
-			};
-
-			hmsdsa_port3: port@3 {
-				/* cpu port connected to eqos */
-				ethernet = <&eqos>;
-				label = "cpu";
-				reg = <3>;
-				phy-mode = "sgmii";
-
-				fixed-link {
-					speed = <1000>;
-					full-duplex;
-				};
-			};
-
-			hmsdsa_port4: port@4 {
-				label = "hms0p4";
-				reg = <4>;
-				phy-mode = "sgmii";
-				status = "disabled";
-
-				fixed-link {
-					speed = <1000>;
-					full-duplex;
-				};
-			};
-		};
-	};
+&hmsdsa_port3 {
+	label = "cpu";
+	ethernet = <&eqos>;
 };
 
 &pinctrl_ecspi2 {
