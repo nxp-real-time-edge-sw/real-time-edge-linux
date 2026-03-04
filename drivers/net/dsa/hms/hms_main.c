@@ -320,12 +320,14 @@ static int hms_parse_dt(struct hms_private *priv)
 	return rc;
 }
 
-static void hms_mac_link_down(struct dsa_switch *ds, int port,
-			       unsigned int mode,
-			       phy_interface_t interface)
+static void hms_mac_link_down(struct phylink_config *config,
+			      unsigned int mode,
+			      phy_interface_t interface)
 {
-	struct hms_private *priv = ds->priv;
+	struct dsa_port *dp = dsa_phylink_to_port(config);
+	struct hms_private *priv = dp->ds->priv;
 	struct hms_mac_config *mac;
+	int port = dp->index;
 
 	mac = &priv->config.mac[port];
 
@@ -334,15 +336,17 @@ static void hms_mac_link_down(struct dsa_switch *ds, int port,
 	hms_port_link_set(priv, port, false);
 }
 
-static void hms_mac_link_up(struct dsa_switch *ds, int port,
-			     unsigned int mode,
-			     phy_interface_t interface,
-			     struct phy_device *phydev,
-			     int speed, int duplex,
-			     bool tx_pause, bool rx_pause)
+static void hms_mac_link_up(struct phylink_config *config,
+			    struct phy_device *phydev,
+			    unsigned int mode,
+			    phy_interface_t interface,
+			    int speed, int duplex,
+			    bool tx_pause, bool rx_pause)
 {
-	struct hms_private *priv = ds->priv;
+	struct dsa_port *dp = dsa_phylink_to_port(config);
+	struct hms_private *priv = dp->ds->priv;
 	struct hms_mac_config *mac;
+	int port = dp->index;
 
 	mac = &priv->config.mac[port];
 
@@ -351,6 +355,19 @@ static void hms_mac_link_up(struct dsa_switch *ds, int port,
 
 	hms_port_phylink_mode_set(priv, mac);
 	hms_port_link_set(priv, port, true);
+}
+
+static void hms_mac_config(struct phylink_config *config,
+			   unsigned int mode,
+			   const struct phylink_link_state *state)
+{
+}
+
+static struct phylink_pcs * hms_mac_select_pcs(struct phylink_config *config,
+					       phy_interface_t iface)
+{
+	/* not supported, return NULL */
+	return NULL;
 }
 
 static void hms_phylink_get_caps(struct dsa_switch *ds, int port,
@@ -1294,6 +1311,13 @@ static void hms_teardown(struct dsa_switch *ds)
 	hms_config_free(&priv->config);
 }
 
+static const struct phylink_mac_ops hms_phylink_mac_ops = {
+	.mac_select_pcs		= hms_mac_select_pcs,
+	.mac_config		= hms_mac_config,
+	.mac_link_down		= hms_mac_link_down,
+	.mac_link_up		= hms_mac_link_up,
+};
+
 static const struct dsa_switch_ops hms_switch_ops = {
 	.get_tag_protocol	= hms_get_tag_protocol,
 	.connect_tag_protocol	= hms_connect_tag_protocol,
@@ -1302,8 +1326,6 @@ static const struct dsa_switch_ops hms_switch_ops = {
 	.port_change_mtu	= hms_change_mtu,
 	.port_max_mtu		= hms_get_max_mtu,
 	.phylink_get_caps	= hms_phylink_get_caps,
-	.phylink_mac_link_up	= hms_mac_link_up,
-	.phylink_mac_link_down	= hms_mac_link_down,
 	.get_strings		= hms_get_strings,
 	.get_ethtool_stats	= hms_get_ethtool_stats,
 	.get_sset_count		= hms_get_sset_count,
@@ -1430,6 +1452,7 @@ static int hms_probe(struct spi_device *spi)
 	ds->dev = dev;
 	ds->num_ports = priv->info->num_ports;
 	ds->ops = &hms_switch_ops;
+	ds->phylink_mac_ops = &hms_phylink_mac_ops;
 	ds->priv = priv;
 	priv->ds = ds;
 
