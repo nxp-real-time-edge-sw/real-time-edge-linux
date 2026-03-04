@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright 2025 NXP
+ * Copyright 2025-2026 NXP
  */
 
 #include <linux/if_vlan.h>
@@ -505,6 +505,7 @@ static const struct dsa_device_ops hms_netdev_ops = {
 	.promisc_on_conduit	= true,
 };
 
+MODULE_DESCRIPTION("DSA tag driver for Heterogeneous Multi-SoC switches");
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS_DSA_TAG_DRIVER(DSA_TAG_PROTO_HMS, HMS_8021Q_NAME);
 
