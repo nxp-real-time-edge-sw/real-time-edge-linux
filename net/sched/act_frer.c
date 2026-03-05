@@ -63,7 +63,7 @@ static enum hrtimer_restart frer_hrtimer_func(struct hrtimer *timer)
 
 	remaining_tm = (ktime_t)(frer_act->rcvy_reset_msec * 1000000);
 
-	hrtimer_forward(timer, timer->base->get_time(), remaining_tm);
+	hrtimer_set_expires(timer, ktime_get() + remaining_tm);
 
 	return HRTIMER_RESTART;
 }
@@ -303,9 +303,8 @@ static int tcf_frer_init(struct net *net, struct nlattr *nla,
 	}
 
 	if (frer_act->recover && frer_act->rcvy_reset_msec) {
-		hrtimer_init(&frer_act->hrtimer, CLOCK_TAI,
-			     HRTIMER_MODE_REL_SOFT);
-		frer_act->hrtimer.function = frer_hrtimer_func;
+		hrtimer_setup(&frer_act->hrtimer, frer_hrtimer_func, CLOCK_TAI,
+			      HRTIMER_MODE_ABS_SOFT);
 
 		remaining_tm = (ktime_t)(frer_act->rcvy_reset_msec * 1000000);
 		hrtimer_start(&frer_act->hrtimer, remaining_tm,
@@ -515,7 +514,7 @@ static int tcf_frer_act(struct sk_buff *skb, const struct tc_action *a,
 			ret = frer_match_rcvy_alg(frer_act, sequence,
 						  individual);
 		if (ret) {
-			frer_act->tcf_qstats.drops++;
+			tcf_action_inc_drop_qstats(&frer_act->common);
 			retval = TC_ACT_SHOT;
 		}
 
