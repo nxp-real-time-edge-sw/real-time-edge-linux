@@ -1564,17 +1564,6 @@ static int imx_rproc_probe(struct platform_device *pdev)
 	if (ret)
 		priv->startup_delay = 0;
 
-	ret = of_property_read_u32(dev->of_node, "fsl,cpus-bits", &cpus);
-	if (ret) {
-		cpumask_clear(&priv->cpus);
-	} else {
-		cpus_bits = cpus;
-		bitmap_copy(cpumask_bits(&priv->cpus), &cpus_bits,
-				min((unsigned int)nr_cpumask_bits,
-				    (unsigned int)sizeof(unsigned long)));
-		rproc->auto_boot = false;
-	}
-
 	ret = devm_rproc_add(dev, rproc);
 	if (ret) {
 		dev_err(dev, "rproc_add failed\n");
