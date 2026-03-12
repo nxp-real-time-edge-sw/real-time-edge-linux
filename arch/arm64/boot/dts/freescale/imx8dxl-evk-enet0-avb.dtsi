@@ -12,9 +12,9 @@
 &gpt5 {
 	compatible = "fsl,avb-gpt";
 
-	clocks = <&gpt5_lpcg 1>,
-		<&gpt5_lpcg 1>,
-		<&gpt5_lpcg 0>,
+	clocks = <&gpt5_lpcg IMX_LPCG_CLK_4>,
+		<&gpt5_lpcg IMX_LPCG_CLK_4>,
+		<&gpt5_lpcg IMX_LPCG_CLK_0>,
 		<&clk IMX_SC_R_AUDIO_PLL_0 IMX_SC_PM_CLK_PLL>;
 	clock-names = "ipg", "per", "clk_in", "audio_pll";
 
