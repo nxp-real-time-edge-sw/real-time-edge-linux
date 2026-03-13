@@ -374,7 +374,10 @@ static int fec_ecat_txq_submit_buff(struct fec_enet_priv_tx_q *txq,
 	skb = txq->tx_skbuff[index];
 	bufaddr = skb->data;
 	buflen = len;
-	copy_from_user(skb->data, buff, len);
+	if (copy_from_user(skb->data, buff, len)) {
+		return 0;
+	}
+
 	bdp->cbd_datlen = cpu_to_fec16(buflen);
 	/* Push the data cache so the CPM does not get stale memory data. */
 	dma_sync_single_for_device(&fep->pdev->dev,
@@ -834,7 +837,9 @@ static int fec_ecat_recv_from_queue(struct net_device *ndev, void __user *buff, 
 		if (data[12] ==0x88 && data[13] ==0xa4) {
 			len = len < pkt_len? len : pkt_len;
 			if (!need_swap) {
-				copy_to_user(buff, data, len);
+				if (copy_to_user(buff, data, len)) {
+					goto rx_processing_done;
+				}
 			}
 			else {
 				swap_buffer2(buff, data, len);
