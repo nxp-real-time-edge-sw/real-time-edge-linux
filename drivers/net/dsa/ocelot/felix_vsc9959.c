@@ -1591,12 +1591,12 @@ static int vsc9959_qos_port_tas_set(struct ocelot *ocelot, int port,
 
 	ocelot_port->taprio = taprio_offload_get(taprio);
 
-	vsc9959_tas_guard_bands_update(ocelot, port);
-
 	val = ocelot_read(ocelot, QSYS_PARAM_STATUS_REG_8);
 	if (val & QSYS_PARAM_STATUS_REG_8_CONFIG_PENDING)
 		schedule_delayed_work(&ocelot_port->guard_band_work,
 				      msecs_to_jiffies(1000));
+
+	vsc9959_tas_guard_bands_update(ocelot, port);
 
 	mutex_unlock(&ocelot->fwd_domain_lock);
 
