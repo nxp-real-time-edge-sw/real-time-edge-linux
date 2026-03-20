@@ -11,42 +11,32 @@
 
 #include "enetc_pf.h"
 
-void enetc_get_ip_revision(struct enetc_si *si)
-{
-	struct enetc_hw *hw = &si->hw;
-	u32 val;
-
-	val = enetc_global_rd(hw, ENETC_G_EIPBRR0);
-	si->revision = val & EIPBRR0_REVISION;
-}
-
-static int enetc_set_si_hw_addr(struct enetc_pf *pf, int si, u8 *mac_addr)
+static void enetc_set_si_hw_addr(struct enetc_pf *pf, int si,
+                 const u8 *mac_addr)
 {
 	struct enetc_hw *hw = &pf->si->hw;
 
-	if (pf->hw_ops->set_si_primary_mac)
-		pf->hw_ops->set_si_primary_mac(hw, si, mac_addr);
-	else
-		return -EOPNOTSUPP;
+	pf->ops->set_si_primary_mac(hw, si, mac_addr);
+}
 
-	return 0;
+static void enetc_get_si_hw_addr(struct enetc_pf *pf, int si, u8 *mac_addr)
+{
+	struct enetc_hw *hw = &pf->si->hw;
+
+	pf->ops->get_si_primary_mac(hw, si, mac_addr);
 }
 
 int enetc_pf_set_mac_addr(struct net_device *ndev, void *addr)
 {
 	struct enetc_ndev_priv *priv = netdev_priv(ndev);
-	struct enetc_pf *pf = enetc_si_priv(priv->si);
-	struct sockaddr *saddr = addr;
-	int err;
+    struct enetc_pf *pf = enetc_si_priv(priv->si);
+    struct sockaddr *saddr = addr;
 
 	if (!is_valid_ether_addr(saddr->sa_data))
-		return -EADDRNOTAVAIL;
-
-	err = enetc_set_si_hw_addr(pf, 0, saddr->sa_data);
-	if (err)
-		return err;
+        return -EADDRNOTAVAIL;
 
 	eth_hw_addr_set(ndev, saddr->sa_data);
+    enetc_set_si_hw_addr(pf, 0, saddr->sa_data);
 
 	return 0;
 }
@@ -55,36 +45,39 @@ static int enetc_setup_mac_address(struct device_node *np, struct enetc_pf *pf,
 				   int si)
 {
 	struct device *dev = &pf->si->pdev->dev;
-	struct enetc_hw *hw = &pf->si->hw;
-	u8 mac_addr[ETH_ALEN] = { 0 };
-	int err;
+	struct net_device *ndev = pf->si->ndev;
+    u8 mac_addr[ETH_ALEN] = { 0 };
+    int err;
 
-	/* (1) try to get the MAC address from the device tree */
-	if (np) {
-		err = of_get_mac_address(np, mac_addr);
-		if (err == -EPROBE_DEFER)
-			return err;
-	}
+    /* (0) try to get the MAC address from netdev */
+    if (ndev && ndev->dev_addr && is_valid_ether_addr(ndev->dev_addr))
+        memcpy(mac_addr, ndev->dev_addr, ETH_ALEN);
 
-	/* (2) bootloader supplied MAC address */
-	if (is_zero_ether_addr(mac_addr) && pf->hw_ops->get_si_primary_mac)
-		pf->hw_ops->get_si_primary_mac(hw, si, mac_addr);
+    /* (1) try to get the MAC address from the device tree */
+    if (is_zero_ether_addr(mac_addr) && np) {
+        err = of_get_mac_address(np, mac_addr);
+        if (err == -EPROBE_DEFER)
+            return err;
+    }
 
-	/* (3) choose a random one */
-	if (is_zero_ether_addr(mac_addr)) {
-		eth_random_addr(mac_addr);
-		dev_info(dev, "no MAC address specified for SI%d, using %pM\n",
-			 si, mac_addr);
-	}
+    /* (2) bootloader supplied MAC address */
+    if (is_zero_ether_addr(mac_addr))
+        enetc_get_si_hw_addr(pf, si, mac_addr);
 
-	err = enetc_set_si_hw_addr(pf, si, mac_addr);
-	if (err)
-		return err;
+    /* (3) choose a random one */
+    if (is_zero_ether_addr(mac_addr)) {
+        eth_random_addr(mac_addr);
+        dev_info(dev, "no MAC address specified for SI%d, using %pM\n",
+             si, mac_addr);
+    }
 
-	if (!si)
-		memcpy(pf->mac_addr_base, mac_addr, ETH_ALEN);
+    enetc_set_si_hw_addr(pf, si, mac_addr);
 
-	return 0;
+    /* si == 0 is PF */
+    if (!si)
+        memcpy(pf->mac_addr_base, mac_addr, ETH_ALEN);
+
+    return 0;
 }
 
 int enetc_setup_mac_addresses(struct device_node *np, struct enetc_pf *pf)
@@ -110,10 +103,8 @@ int enetc_setup_mac_addresses(struct device_node *np, struct enetc_pf *pf)
 					 "SI%d: Invalid MAC addr, using %pM\n",
 					 i + 1, mac_addr);
 			}
-			err = enetc_set_si_hw_addr(pf, i + 1, mac_addr);
+			enetc_set_si_hw_addr(pf, i + 1, mac_addr);
 		}
-		if (err)
-			return err;
 	}
 
 	return 0;
@@ -173,7 +164,6 @@ int enetc_pf_set_vf_mac(struct net_device *ndev, int vf, u8 *mac)
 	struct enetc_ndev_priv *priv = netdev_priv(ndev);
 	struct enetc_pf *pf = enetc_si_priv(priv->si);
 	struct enetc_vf_state *vf_state;
-	int err;
 
 	if (vf >= pf->total_vfs)
 		return -EINVAL;
@@ -184,9 +174,7 @@ int enetc_pf_set_vf_mac(struct net_device *ndev, int vf, u8 *mac)
 	vf_state = &pf->vf_state[vf];
 	vf_state->flags |= ENETC_VF_FLAG_PF_SET_MAC;
 
-	err = enetc_set_si_hw_addr(pf, vf + 1, mac);
-	if (err)
-		return err;
+	enetc_set_si_hw_addr(pf, vf + 1, mac);
 
 	return 0;
 }
@@ -347,7 +335,7 @@ void enetc_pf_netdev_setup(struct enetc_si *si, struct net_device *ndev,
 
 	ndev->hw_features = NETIF_F_SG | NETIF_F_RXCSUM |
 			    NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_HW_VLAN_CTAG_RX |
-			    NETIF_F_HW_VLAN_CTAG_FILTER |
+			    //NETIF_F_HW_VLAN_CTAG_FILTER |
 			    NETIF_F_HW_CSUM | NETIF_F_TSO | NETIF_F_TSO6 |
 			    NETIF_F_GSO_UDP_L4;
 	ndev->features = NETIF_F_HIGHDMA | NETIF_F_SG | NETIF_F_RXCSUM |
@@ -374,16 +362,14 @@ void enetc_pf_netdev_setup(struct enetc_si *si, struct net_device *ndev,
 			     NETDEV_XDP_ACT_XSK_ZEROCOPY;
 
 	if (is_enetc_rev1(si)) {
+		ndev->max_mtu = ENETC_MAX_MTU;
 		priv->max_frags_bd = ENETC_MAX_SKB_FRAGS;
 	} else {
+		ndev->max_mtu = ENETC4_MAX_MTU;
 		priv->max_frags_bd = ENETC4_MAX_SKB_FRAGS;
-		priv->active_offloads |= ENETC_F_CHECKSUM;
+		priv->active_offloads |= ENETC_F_TXCSUM;
 		priv->shared_tx_rings = true;
 	}
-
-	ndev->xdp_zc_max_segs = priv->max_frags_bd;
-	ndev->xdp_metadata_ops = &ecat_enetc_xdp_metadata_ops;
-	ndev->xsk_tx_metadata_ops = &ecat_enetc_xsk_tx_metadata_ops;
 
 	if (si->hw_features & ENETC_SI_F_RSC)
 		ndev->hw_features |= NETIF_F_LRO;
@@ -660,30 +646,32 @@ void enetc_phylink_destroy(struct enetc_ndev_priv *priv)
 /* Messaging */
 static u16 enetc_msg_pf_set_vf_primary_mac_addr(struct enetc_pf *pf, int vf_id)
 {
-	struct enetc_vf_state *vf_state = &pf->vf_state[vf_id];
 	struct enetc_msg_swbd *msg_swbd = &pf->rxmsg[vf_id];
-	struct device *dev = &pf->si->pdev->dev;
-	struct enetc_msg_mac_exact_filter *msg;
-	union enetc_pf_msg pf_msg;
-	char *addr;
+	struct enetc_msg_mac_hash_filter *msg;
+    struct enetc_hw *hw = &pf->si->hw;
+    int si_id = vf_id + 1;
 
-	msg = (struct enetc_msg_mac_exact_filter *)msg_swbd->vaddr;
-	addr = msg->mac[0].addr;
-	if (vf_state->flags & ENETC_VF_FLAG_PF_SET_MAC) {
-		dev_warn(dev, "Attempt to override PF set mac addr for VF%d\n",
-			 vf_id);
-		if (!enetc_pf_is_vf_trusted(pf, vf_id)) {
-			pf_msg.class_id = ENETC_MSG_CLASS_ID_PERMISSION_DENY;
-			return pf_msg.code;
-		}
-	}
+    if (is_enetc_rev1(pf->si))
+        return ENETC_MSG_CODE_NOT_SUPPORT;
 
-	if (enetc_set_si_hw_addr(pf, vf_id + 1, addr))
-		pf_msg.class_id = ENETC_MSG_CLASS_ID_CMD_NOT_SUPPORT;
-	else
-		pf_msg.class_id = ENETC_MSG_CLASS_ID_CMD_SUCCESS;
+    if (!enetc_pf_is_vf_trusted(pf, vf_id))
+        return ENETC_MSG_CODE_PERMISSION_DENY;
 
-	return pf_msg.code;
+    msg = (struct enetc_msg_mac_hash_filter *)msg_swbd->vaddr;
+    /* Currently, hardware only supports 64 bits table size */
+    if (msg->size != ENETC_MAC_HASH_TABLE_SIZE_64)
+        return ENETC_MSG_CODE_NOT_SUPPORT;
+
+    if (msg->type == ENETC_MAC_FILTER_TYPE_UC) {
+        pf->ops->set_si_mac_hash_filter(hw, si_id, UC, msg->hash_tbl[0]);
+    } else if (msg->type == ENETC_MAC_FILTER_TYPE_MC) {
+        pf->ops->set_si_mac_hash_filter(hw, si_id, MC, msg->hash_tbl[0]);
+    } else {
+        pf->ops->set_si_mac_hash_filter(hw, si_id, UC, msg->hash_tbl[0]);
+        pf->ops->set_si_mac_hash_filter(hw, si_id, MC, msg->hash_tbl[1]);
+    }
+
+    return ENETC_MSG_CODE_SUCCESS;
 }
 
 static struct enetc_mac_list_entry

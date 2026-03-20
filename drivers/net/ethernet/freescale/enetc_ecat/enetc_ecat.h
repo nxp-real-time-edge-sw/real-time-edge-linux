@@ -21,8 +21,11 @@
 #include "enetc_msg.h"
 
 #define ENETC_MAC_MAXFRM_SIZE	9600
+#define ENETC4_MAC_MAXFRM_SIZE     2000
 #define ENETC_MAX_MTU		(ENETC_MAC_MAXFRM_SIZE - \
 				(ETH_FCS_LEN + ETH_HLEN + VLAN_HLEN))
+#define ENETC4_MAX_MTU      (ENETC4_MAC_MAXFRM_SIZE - \
+                (ETH_FCS_LEN + ETH_HLEN + VLAN_HLEN))
 
 #define ENETC_CBD_DATA_MEM_ALIGN 64
 
@@ -73,13 +76,14 @@ struct enetc_lso_t {
 #define ENETC_LSO_MAX_DATA_LEN		(256 * ENETC_1KB_SIZE)
 
 #define ENETC_RX_MAXFRM_SIZE	ENETC_MAC_MAXFRM_SIZE
-#define ENETC_RXB_TRUESIZE	2048 /* PAGE_SIZE >> 1 */
-#define ENETC_RXB_PAD		NET_SKB_PAD /* add extra space if needed */
-#define ENETC_RXB_DMA_SIZE	\
-	(SKB_WITH_OVERHEAD(ENETC_RXB_TRUESIZE) - ENETC_RXB_PAD)
-#define ENETC_RXB_DMA_SIZE_XDP	\
-	(SKB_WITH_OVERHEAD(ENETC_RXB_TRUESIZE) - XDP_PACKET_HEADROOM)
-#define ENETC_RS_MAX_BYTES	(ENETC_RXB_DMA_SIZE * (MAX_SKB_FRAGS + 1))
+#define ENETC_PAGE_SIZE(order)      (PAGE_SIZE << (order))
+#define ENETC_RXB_TRUESIZE(order)   (ENETC_PAGE_SIZE(order) >> 1)
+#define ENETC_RXB_PAD       NET_SKB_PAD /* add extra space if needed */
+#define ENETC_RXB_DMA_SIZE(order)   \
+    (SKB_WITH_OVERHEAD(ENETC_RXB_TRUESIZE(order)) - ENETC_RXB_PAD)
+#define ENETC_RXB_DMA_SIZE_XDP(order)   \
+    (SKB_WITH_OVERHEAD(ENETC_RXB_TRUESIZE(order)) \
+     - XDP_PACKET_HEADROOM)
 
 struct enetc_rx_swbd {
     struct sk_buff *skb;
@@ -167,6 +171,7 @@ struct enetc_bdr {
 	};
 	void __iomem *idr; /* Interrupt Detect Register pointer */
 
+	int page_order;
 	int buffer_offset;
 	struct enetc_xdp_data xdp;
 
@@ -419,6 +424,11 @@ static inline int enetc4_pf_to_port(struct pci_dev *pf_pdev)
 	}
 }
 
+static inline bool enetc_is_pseudo_mac(struct enetc_si *si)
+{
+    return si->hw_features & ENETC_SI_F_PPM;
+}
+
 #define ENETC_MAX_NUM_TXQS	8
 
 struct enetc_int_vector {
@@ -464,8 +474,7 @@ enum enetc_active_offloads {
 	ENETC_F_QBV			= BIT(9),
 	ENETC_F_QCI			= BIT(10),
 	ENETC_F_QBU			= BIT(11),
-
-	ENETC_F_CHECKSUM		= BIT(12),
+	ENETC_F_TXCSUM          = BIT(12),
 	ENETC_F_LSO			= BIT(13),
 	ENETC_F_RSC			= BIT(14),
 };
@@ -473,6 +482,7 @@ enum enetc_active_offloads {
 enum enetc_flags_bit {
 	ENETC_TX_ONESTEP_TSTAMP_IN_PROGRESS = 0,
 	ENETC_TX_DOWN,
+	ENETC_SUSPEND,
 };
 
 /* interrupt coalescing modes */
@@ -512,6 +522,7 @@ struct enetc_ndev_priv {
 	 * this may cause a deadlock.
 	 */
 	bool shared_tx_rings;
+	struct pci_dev *timer_pdev; /* timer device */
 
 	enum enetc_active_offloads active_offloads;
 
@@ -572,7 +583,9 @@ extern const struct xsk_tx_metadata_ops ecat_enetc_xsk_tx_metadata_ops;
 u32 ecat_enetc_port_mac_rd(struct enetc_si *si, u32 reg);
 void ecat_enetc_port_mac_wr(struct enetc_si *si, u32 reg, u32 val);
 int ecat_enetc_pci_probe(struct pci_dev *pdev, const char *name, int sizeof_priv);
+int ecat_enetc_get_driver_data(struct enetc_si *si);
 void ecat_enetc_pci_remove(struct pci_dev *pdev);
+int ecat_enetc_alloc_msix_vectors(struct enetc_ndev_priv *priv);
 int ecat_enetc_alloc_msix(struct enetc_ndev_priv *priv);
 void ecat_enetc_free_msix(struct enetc_ndev_priv *priv);
 void ecat_enetc_get_si_caps(struct enetc_si *si);
@@ -583,6 +596,9 @@ int ecat_enetc_configure_si(struct enetc_ndev_priv *priv);
 
 int ecat_enetc_suspend(struct net_device *ndev, bool wol);
 int ecat_enetc_resume(struct net_device *ndev, bool wol);
+int ecat_enetc_reconfigure(struct enetc_ndev_priv *priv, bool extended,
+              int (*cb)(struct enetc_ndev_priv *priv, void *ctx),
+              void *ctx);
 int ecat_enetc_open(struct net_device *ndev);
 int ecat_enetc_close(struct net_device *ndev);
 void ecat_enetc_start(struct net_device *ndev);
@@ -609,6 +625,10 @@ int ecat_enetc_vid_hash_idx(unsigned int vid);
 void ecat_enetc_refresh_vlan_ht_filter(struct enetc_si *si);
 
 /* ethtool */
+extern const struct ethtool_ops enetc_pf_ethtool_ops;
+extern const struct ethtool_ops enetc4_pf_ethtool_ops;
+extern const struct ethtool_ops enetc_vf_ethtool_ops;
+extern const struct ethtool_ops enetc4_ppm_ethtool_ops;
 void ecat_enetc_set_ethtool_ops(struct net_device *ndev);
 void ecat_enetc_mm_link_state_update(struct enetc_ndev_priv *priv, bool link);
 void enetc_mm_commit_preemptible_tcs(struct enetc_ndev_priv *priv);
@@ -616,16 +636,18 @@ void ecat_enetc_eee_mode_set(struct net_device *dev, bool enable);
 
 /* control buffer descriptor ring (CBDR) */
 int ecat_enetc_init_cbdr(struct enetc_si *si);
-void ecat_enetc_enetc_free_cbdr(struct enetc_si *si);
+void ecat_enetc_free_cbdr(struct enetc_si *si);
 int ecat_enetc_set_mac_flt_entry(struct enetc_si *si, int index,
 			    char *mac_addr, int si_map);
 int ecat_enetc_clear_mac_flt_entry(struct enetc_si *si, int index);
 int ecat_enetc_set_fs_entry(struct enetc_si *si, struct enetc_cmd_rfse *rfse,
 		       int index);
-void ecat_enetc_set_rss_key(struct enetc_hw *hw, const u8 *bytes);
+void ecat_enetc_set_rss_key(struct enetc_si *si, const u8 *bytes);
 int ecat_enetc_get_rss_table(struct enetc_si *si, u32 *table, int count);
 int ecat_enetc_set_rss_table(struct enetc_si *si, const u32 *table, int count);
 int ecat_enetc_send_cmd(struct enetc_si *si, struct enetc_cbd *cbd);
+int ecat_enetc4_get_rss_table(struct enetc_si *si, u32 *table, int count);
+int ecat_enetc4_set_rss_table(struct enetc_si *si, const u32 *table, int count);
 
 static inline bool enetc_ptp_clock_is_enabled(struct enetc_si *si)
 {
@@ -785,19 +807,6 @@ static inline void enetc_tsn_pf_deinit(struct net_device *netdev)
 }
 
 static inline void enetc_ptp_clock_update(void)
-{
-}
-#endif
-
-#if IS_ENABLED(CONFIG_DEBUG_FS)
-void enetc_create_debugfs(struct enetc_si *si);
-void enetc_remove_debugfs(struct enetc_si *si);
-#else
-static inline void enetc_create_debugfs(struct enetc_si *si)
-{
-}
-
-static inline void enetc_remove_debugfs(struct enetc_si *si)
 {
 }
 #endif

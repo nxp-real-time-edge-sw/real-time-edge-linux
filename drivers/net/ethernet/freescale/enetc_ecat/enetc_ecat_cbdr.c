@@ -3,48 +3,6 @@
 
 #include "enetc_ecat.h"
 
-static int enetc_setup_cbdr(struct device *dev, struct enetc_hw *hw,
-			    int bd_count, struct enetc_cbdr *cbdr)
-{
-	int size = bd_count * sizeof(struct enetc_cbd);
-
-	cbdr->bd_base = dma_alloc_coherent(dev, size, &cbdr->bd_dma_base,
-					   GFP_KERNEL);
-	if (!cbdr->bd_base)
-		return -ENOMEM;
-
-	/* h/w requires 128B alignment */
-	if (!IS_ALIGNED(cbdr->bd_dma_base, 128)) {
-		dma_free_coherent(dev, size, cbdr->bd_base,
-				  cbdr->bd_dma_base);
-		return -EINVAL;
-	}
-
-	cbdr->next_to_clean = 0;
-	cbdr->next_to_use = 0;
-	cbdr->dma_dev = dev;
-	cbdr->bd_count = bd_count;
-
-	cbdr->pir = hw->reg + ENETC_SICBDRPIR;
-	cbdr->cir = hw->reg + ENETC_SICBDRCIR;
-	cbdr->mr = hw->reg + ENETC_SICBDRMR;
-
-	/* set CBDR cache attributes */
-	enetc_wr(hw, ENETC_SICAR2,
-		 ENETC_SICAR_RD_COHERENT | ENETC_SICAR_WR_COHERENT);
-
-	enetc_wr(hw, ENETC_SICBDRBAR0, lower_32_bits(cbdr->bd_dma_base));
-	enetc_wr(hw, ENETC_SICBDRBAR1, upper_32_bits(cbdr->bd_dma_base));
-	enetc_wr(hw, ENETC_SICBDRLENR, ENETC_RTBLENR_LEN(cbdr->bd_count));
-
-	enetc_wr_reg(cbdr->pir, cbdr->next_to_clean);
-	enetc_wr_reg(cbdr->cir, cbdr->next_to_use);
-	/* enable ring */
-	enetc_wr_reg(cbdr->mr, BIT(31));
-
-	return 0;
-}
-
 static int enetc4_setup_cbdr(struct enetc_si *si)
 {
 	struct ntmp_user *user = &si->ntmp_user;
@@ -75,29 +33,9 @@ static int enetc4_setup_cbdr(struct enetc_si *si)
 
 int ecat_enetc_init_cbdr(struct enetc_si *si)
 {
-	if (is_enetc_rev1(si))
-		return enetc_setup_cbdr(&si->pdev->dev, &si->hw,
-					ENETC_CBDR_DEFAULT_SIZE,
-					&si->cbd_ring);
-	else
-		return enetc4_setup_cbdr(si);
+	return enetc4_setup_cbdr(si);
 }
 EXPORT_SYMBOL_GPL(ecat_enetc_init_cbdr);
-
-static void enetc_teardown_cbdr(struct enetc_si *si)
-{
-	struct enetc_cbdr *cbdr = &si->cbd_ring;
-	int size;
-
-	/* disable ring */
-	enetc_wr_reg(cbdr->mr, 0);
-
-	size = cbdr->bd_count * sizeof(struct enetc_cbd);
-	dma_free_coherent(cbdr->dma_dev, size, cbdr->bd_base,
-			  cbdr->bd_dma_base);
-	cbdr->bd_base = NULL;
-	cbdr->dma_dev = NULL;
-}
 
 static void enetc4_teardown_cbdr(struct enetc_si *si)
 {
@@ -107,14 +45,11 @@ static void enetc4_teardown_cbdr(struct enetc_si *si)
 	user->dev = NULL;
 }
 
-void ecat_enetc_enetc_free_cbdr(struct enetc_si *si)
+void ecat_enetc_free_cbdr(struct enetc_si *si)
 {
-	if (is_enetc_rev1(si))
-		enetc_teardown_cbdr(si);
-	else
-		enetc4_teardown_cbdr(si);
+	enetc4_teardown_cbdr(si);
 }
-EXPORT_SYMBOL_GPL(ecat_enetc_enetc_free_cbdr);
+EXPORT_SYMBOL_GPL(ecat_enetc_free_cbdr);
 
 static void enetc_clean_cbdr(struct enetc_cbdr *ring)
 {
@@ -312,3 +247,15 @@ int ecat_enetc_set_rss_table(struct enetc_si *si, const u32 *table, int count)
 	return enetc_cmd_rss_table(si, (u32 *)table, count, false);
 }
 EXPORT_SYMBOL_GPL(ecat_enetc_set_rss_table);
+
+int ecat_enetc4_get_rss_table(struct enetc_si *si, u32 *table, int count)
+{
+    return ntmp_rsst_query_entry(&si->ntmp_user, table, count);
+}
+EXPORT_SYMBOL_GPL(ecat_enetc4_get_rss_table);
+
+int ecat_enetc4_set_rss_table(struct enetc_si *si, const u32 *table, int count)
+{
+    return ntmp_rsst_update_entry(&si->ntmp_user, table, count);
+}
+EXPORT_SYMBOL_GPL(ecat_enetc4_set_rss_table);

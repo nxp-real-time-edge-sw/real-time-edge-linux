@@ -166,7 +166,7 @@ int enetc_devlink_alloc(struct enetc_pf *pf)
 
 	devl_priv = devlink_priv(devlink);
 	devl_priv->pf = pf;
-	pf->devl_priv = devl_priv;
+	pf->devlink = devlink;
 
 	return 0;
 }
