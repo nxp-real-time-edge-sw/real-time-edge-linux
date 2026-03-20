@@ -93,19 +93,6 @@ static int enetc_get_reglen(struct net_device *ndev)
 	return len;
 }
 
-static int enetc_ppm_get_reglen(struct net_device *ndev)
-{
-	struct enetc_ndev_priv *priv = netdev_priv(ndev);
-	int len;
-
-	len = enetc_get_si_reglen(priv);
-	len += ARRAY_SIZE(enetc4_port_regs);
-
-	len *= sizeof(u32) * 2;
-
-	return len;
-}
-
 static u32 *enetc_get_si_regs(struct enetc_ndev_priv *priv, u32 *buf)
 {
 	struct enetc_hw *hw = &priv->si->hw;
@@ -183,22 +170,6 @@ static void enetc_get_regs(struct net_device *ndev, struct ethtool_regs *regs,
 		}
 	}
 
-}
-
-static void enetc_ppm_get_regs(struct net_device *ndev,
-			       struct ethtool_regs *regs, void *regbuf)
-{
-	struct enetc_ndev_priv *priv = netdev_priv(ndev);
-	struct enetc_hw *hw = &priv->si->hw;
-	u32 *buf;
-	int i;
-
-	buf = enetc_get_si_regs(priv, (u32 *)regbuf);
-
-	for (i = 0; i < ARRAY_SIZE(enetc4_port_regs); i++) {
-		*buf++ = enetc4_port_regs[i];
-		*buf++ = enetc_port_rd(hw, enetc4_port_regs[i]);
-	}
 }
 
 static const struct {
@@ -427,20 +398,6 @@ static int enetc_get_sset_count(struct net_device *ndev, int sset)
 	return len;
 }
 
-static int enetc_ppm_get_sset_count(struct net_device *ndev, int sset)
-{
-	struct enetc_ndev_priv *priv = netdev_priv(ndev);
-	int len;
-
-	if (sset != ETH_SS_STATS)
-		return -EOPNOTSUPP;
-
-	len = enetc_get_si_sset_count(priv);
-	len += ARRAY_SIZE(enetc4_port_counters);
-
-	return len;
-}
-
 static u8 *enetc_get_si_strings(struct enetc_ndev_priv *priv, u8 *data)
 {
 	int i, j;
@@ -517,25 +474,6 @@ static void enetc_get_strings(struct net_device *ndev, u32 stringset, u8 *data)
 	}
 }
 
-static void enetc_ppm_get_strings(struct net_device *ndev, u32 stringset, u8 *data)
-{
-	struct enetc_ndev_priv *priv = netdev_priv(ndev);
-	int i;
-	u8 *p;
-
-	switch (stringset) {
-	case ETH_SS_STATS:
-		p = enetc_get_si_strings(priv, data);
-
-		for (i = 0; i < ARRAY_SIZE(enetc4_port_counters); i++) {
-			strscpy(p, enetc4_port_counters[i].name,
-				ETH_GSTRING_LEN);
-			p += ETH_GSTRING_LEN;
-		}
-		break;
-	};
-}
-
 static int enetc_get_si_ethtool_stats(struct enetc_ndev_priv *priv, u64 *data)
 {
 	struct enetc_hw *hw = &priv->si->hw;
@@ -598,34 +536,22 @@ static void enetc_get_ethtool_stats(struct net_device *ndev,
 	}
 }
 
-static void enetc_ppm_get_ethtool_stats(struct net_device *ndev,
-					struct ethtool_stats *stats,
-					u64 *data)
-{
-	struct enetc_ndev_priv *priv = netdev_priv(ndev);
-	struct enetc_hw *hw = &priv->si->hw;
-	int i, o;
-
-	o = enetc_get_si_ethtool_stats(priv, data);
-
-	for (i = 0; i < ARRAY_SIZE(enetc4_port_counters); i++)
-		data[o++] = enetc_port_rd(hw, enetc4_port_counters[i].reg);
-}
-
 static void enetc_pause_stats(struct enetc_si *si, int mac,
 			      struct ethtool_pause_stats *pause_stats)
 {
 	struct enetc_hw *hw = &si->hw;
 
-	if ((si->hw_features & ENETC_SI_F_PPM))
-		return;
-
-	if (is_enetc_rev1(si)) {
+	switch (si->pdev->revision) {
+	case ENETC_REV1:
 		pause_stats->tx_pause_frames = enetc_port_rd64(hw, ENETC_PM_TXPF(mac));
 		pause_stats->rx_pause_frames = enetc_port_rd64(hw, ENETC_PM_RXPF(mac));
-	} else {
+		break;
+	case ENETC_REV4:
 		pause_stats->tx_pause_frames = enetc_port_rd64(hw, ENETC4_PM_TXPF(mac));
 		pause_stats->rx_pause_frames = enetc_port_rd64(hw, ENETC4_PM_RXPF(mac));
+		break;
+	default:
+		break;
 	}
 }
 
@@ -649,49 +575,49 @@ static void enetc_get_pause_stats(struct net_device *ndev,
 	}
 }
 
-static void enetc_mac_stats(struct enetc_si *si, int mac,
+static void enetc_mac_stats(struct enetc_hw *hw, int mac,
 			    struct ethtool_eth_mac_stats *s)
 {
-	struct enetc_hw *hw = &si->hw;
+	s->FramesTransmittedOK = enetc_port_rd64(hw, ENETC_PM_TFRM(mac));
+	s->SingleCollisionFrames = enetc_port_rd64(hw, ENETC_PM_TSCOL(mac));
+	s->MultipleCollisionFrames = enetc_port_rd64(hw, ENETC_PM_TMCOL(mac));
+	s->FramesReceivedOK = enetc_port_rd64(hw, ENETC_PM_RFRM(mac));
+	s->FrameCheckSequenceErrors = enetc_port_rd64(hw, ENETC_PM_RFCS(mac));
+	s->AlignmentErrors = enetc_port_rd64(hw, ENETC_PM_RALN(mac));
+	s->OctetsTransmittedOK = enetc_port_rd64(hw, ENETC_PM_TEOCT(mac));
+	s->FramesWithDeferredXmissions = enetc_port_rd64(hw, ENETC_PM_TDFR(mac));
+	s->LateCollisions = enetc_port_rd64(hw, ENETC_PM_TLCOL(mac));
+	s->FramesAbortedDueToXSColls = enetc_port_rd64(hw, ENETC_PM_TECOL(mac));
+	s->FramesLostDueToIntMACXmitError = enetc_port_rd64(hw, ENETC_PM_TERR(mac));
+	s->CarrierSenseErrors = enetc_port_rd64(hw, ENETC_PM_TCRSE(mac));
+	s->OctetsReceivedOK = enetc_port_rd64(hw, ENETC_PM_REOCT(mac));
+	s->FramesLostDueToIntMACRcvError = enetc_port_rd64(hw, ENETC_PM_RDRNTP(mac));
+	s->MulticastFramesXmittedOK = enetc_port_rd64(hw, ENETC_PM_TMCA(mac));
+	s->BroadcastFramesXmittedOK = enetc_port_rd64(hw, ENETC_PM_TBCA(mac));
+	s->MulticastFramesReceivedOK = enetc_port_rd64(hw, ENETC_PM_RMCA(mac));
+	s->BroadcastFramesReceivedOK = enetc_port_rd64(hw, ENETC_PM_RBCA(mac));
+}
 
-	if (is_enetc_rev1(si)) {
-		s->FramesTransmittedOK = enetc_port_rd64(hw, ENETC_PM_TFRM(mac));
-		s->SingleCollisionFrames = enetc_port_rd64(hw, ENETC_PM_TSCOL(mac));
-		s->MultipleCollisionFrames = enetc_port_rd64(hw, ENETC_PM_TMCOL(mac));
-		s->FramesReceivedOK = enetc_port_rd64(hw, ENETC_PM_RFRM(mac));
-		s->FrameCheckSequenceErrors = enetc_port_rd64(hw, ENETC_PM_RFCS(mac));
-		s->AlignmentErrors = enetc_port_rd64(hw, ENETC_PM_RALN(mac));
-		s->OctetsTransmittedOK = enetc_port_rd64(hw, ENETC_PM_TEOCT(mac));
-		s->FramesWithDeferredXmissions = enetc_port_rd64(hw, ENETC_PM_TDFR(mac));
-		s->LateCollisions = enetc_port_rd64(hw, ENETC_PM_TLCOL(mac));
-		s->FramesAbortedDueToXSColls = enetc_port_rd64(hw, ENETC_PM_TECOL(mac));
-		s->FramesLostDueToIntMACXmitError = enetc_port_rd64(hw, ENETC_PM_TERR(mac));
-		s->CarrierSenseErrors = enetc_port_rd64(hw, ENETC_PM_TCRSE(mac));
-		s->OctetsReceivedOK = enetc_port_rd64(hw, ENETC_PM_REOCT(mac));
-		s->FramesLostDueToIntMACRcvError = enetc_port_rd64(hw, ENETC_PM_RDRNTP(mac));
-		s->MulticastFramesXmittedOK = enetc_port_rd64(hw, ENETC_PM_TMCA(mac));
-		s->BroadcastFramesXmittedOK = enetc_port_rd64(hw, ENETC_PM_TBCA(mac));
-		s->MulticastFramesReceivedOK = enetc_port_rd64(hw, ENETC_PM_RMCA(mac));
-		s->BroadcastFramesReceivedOK = enetc_port_rd64(hw, ENETC_PM_RBCA(mac));
-	} else {
-		s->FramesTransmittedOK = enetc_port_rd64(hw, ENETC4_PM_TFRM(mac));
-		s->SingleCollisionFrames = enetc_port_rd64(hw, ENETC4_PM_TSCOL(mac));
-		s->MultipleCollisionFrames = enetc_port_rd64(hw, ENETC4_PM_TMCOL(mac));
-		s->FramesReceivedOK = enetc_port_rd64(hw, ENETC4_PM_RFRM(mac));
-		s->FrameCheckSequenceErrors = enetc_port_rd64(hw, ENETC4_PM_RFCS(mac));
-		s->AlignmentErrors = enetc_port_rd64(hw, ENETC4_PM_RALN(mac));
-		s->OctetsTransmittedOK = enetc_port_rd64(hw, ENETC4_PM_TEOCT(mac));
-		s->FramesWithDeferredXmissions = enetc_port_rd64(hw, ENETC4_PM_TDFR(mac));
-		s->LateCollisions = enetc_port_rd64(hw, ENETC4_PM_TLCOL(mac));
-		s->FramesAbortedDueToXSColls = enetc_port_rd64(hw, ENETC4_PM_TECOL(mac));
-		s->FramesLostDueToIntMACXmitError = enetc_port_rd64(hw, ENETC4_PM_TERR(mac));
-		s->OctetsReceivedOK = enetc_port_rd64(hw, ENETC4_PM_REOCT(mac));
-		s->FramesLostDueToIntMACRcvError = enetc_port_rd64(hw, ENETC4_PM_RDRNTP(mac));
-		s->MulticastFramesXmittedOK = enetc_port_rd64(hw, ENETC4_PM_TMCA(mac));
-		s->BroadcastFramesXmittedOK = enetc_port_rd64(hw, ENETC4_PM_TBCA(mac));
-		s->MulticastFramesReceivedOK = enetc_port_rd64(hw, ENETC4_PM_RMCA(mac));
-		s->BroadcastFramesReceivedOK = enetc_port_rd64(hw, ENETC4_PM_RBCA(mac));
-	}
+static void enetc4_mac_stats(struct enetc_hw *hw, int mac,
+			     struct ethtool_eth_mac_stats *s)
+{
+	s->FramesTransmittedOK = enetc_port_rd64(hw, ENETC4_PM_TFRM(mac));
+	s->SingleCollisionFrames = enetc_port_rd64(hw, ENETC4_PM_TSCOL(mac));
+	s->MultipleCollisionFrames = enetc_port_rd64(hw, ENETC4_PM_TMCOL(mac));
+	s->FramesReceivedOK = enetc_port_rd64(hw, ENETC4_PM_RFRM(mac));
+	s->FrameCheckSequenceErrors = enetc_port_rd64(hw, ENETC4_PM_RFCS(mac));
+	s->AlignmentErrors = enetc_port_rd64(hw, ENETC4_PM_RALN(mac));
+	s->OctetsTransmittedOK = enetc_port_rd64(hw, ENETC4_PM_TEOCT(mac));
+	s->FramesWithDeferredXmissions = enetc_port_rd64(hw, ENETC4_PM_TDFR(mac));
+	s->LateCollisions = enetc_port_rd64(hw, ENETC4_PM_TLCOL(mac));
+	s->FramesAbortedDueToXSColls = enetc_port_rd64(hw, ENETC4_PM_TECOL(mac));
+	s->FramesLostDueToIntMACXmitError = enetc_port_rd64(hw, ENETC4_PM_TERR(mac));
+	s->OctetsReceivedOK = enetc_port_rd64(hw, ENETC4_PM_REOCT(mac));
+	s->FramesLostDueToIntMACRcvError = enetc_port_rd64(hw, ENETC4_PM_RDRNTP(mac));
+	s->MulticastFramesXmittedOK = enetc_port_rd64(hw, ENETC4_PM_TMCA(mac));
+	s->BroadcastFramesXmittedOK = enetc_port_rd64(hw, ENETC4_PM_TBCA(mac));
+	s->MulticastFramesReceivedOK = enetc_port_rd64(hw, ENETC4_PM_RMCA(mac));
+	s->BroadcastFramesReceivedOK = enetc_port_rd64(hw, ENETC4_PM_RBCA(mac));
 }
 
 static void enetc_ctrl_stats(struct enetc_si *si, int mac,
@@ -699,12 +625,17 @@ static void enetc_ctrl_stats(struct enetc_si *si, int mac,
 {
 	struct enetc_hw *hw = &si->hw;
 
-	if (is_enetc_rev1(si)) {
+	switch (si->pdev->revision) {
+	case ENETC_REV1:
 		s->MACControlFramesTransmitted = enetc_port_rd64(hw, ENETC_PM_TCNP(mac));
 		s->MACControlFramesReceived = enetc_port_rd64(hw, ENETC_PM_RCNP(mac));
-	} else {
+		break;
+	case ENETC_REV4:
 		s->MACControlFramesTransmitted = enetc_port_rd64(hw, ENETC4_PM_TCNP(mac));
 		s->MACControlFramesReceived = enetc_port_rd64(hw, ENETC4_PM_RCNP(mac));
+		break;
+	default:
+		break;
 	}
 }
 
@@ -719,53 +650,70 @@ static const struct ethtool_rmon_hist_range enetc_rmon_ranges[] = {
 	{},
 };
 
-static void enetc_rmon_stats(struct enetc_si *si, int mac,
+static void enetc_rmon_stats(struct enetc_hw *hw, int mac,
 			     struct ethtool_rmon_stats *s)
+{
+	s->undersize_pkts = enetc_port_rd64(hw, ENETC_PM_RUND(mac));
+	s->oversize_pkts = enetc_port_rd64(hw, ENETC_PM_ROVR(mac));
+	s->fragments = enetc_port_rd64(hw, ENETC_PM_RFRG(mac));
+	s->jabbers = enetc_port_rd64(hw, ENETC_PM_RJBR(mac));
+
+	s->hist[0] = enetc_port_rd64(hw, ENETC_PM_R64(mac));
+	s->hist[1] = enetc_port_rd64(hw, ENETC_PM_R127(mac));
+	s->hist[2] = enetc_port_rd64(hw, ENETC_PM_R255(mac));
+	s->hist[3] = enetc_port_rd64(hw, ENETC_PM_R511(mac));
+	s->hist[4] = enetc_port_rd64(hw, ENETC_PM_R1023(mac));
+	s->hist[5] = enetc_port_rd64(hw, ENETC_PM_R1522(mac));
+	s->hist[6] = enetc_port_rd64(hw, ENETC_PM_R1523X(mac));
+
+	s->hist_tx[0] = enetc_port_rd64(hw, ENETC_PM_T64(mac));
+	s->hist_tx[1] = enetc_port_rd64(hw, ENETC_PM_T127(mac));
+	s->hist_tx[2] = enetc_port_rd64(hw, ENETC_PM_T255(mac));
+	s->hist_tx[3] = enetc_port_rd64(hw, ENETC_PM_T511(mac));
+	s->hist_tx[4] = enetc_port_rd64(hw, ENETC_PM_T1023(mac));
+	s->hist_tx[5] = enetc_port_rd64(hw, ENETC_PM_T1522(mac));
+	s->hist_tx[6] = enetc_port_rd64(hw, ENETC_PM_T1523X(mac));
+}
+
+static void enetc4_rmon_stats(struct enetc_hw *hw, int mac,
+			      struct ethtool_rmon_stats *s)
+{
+	s->undersize_pkts = enetc_port_rd64(hw, ENETC4_PM_RUND(mac));
+	s->oversize_pkts = enetc_port_rd64(hw, ENETC4_PM_ROVR(mac));
+	s->fragments = enetc_port_rd64(hw, ENETC4_PM_RFRG(mac));
+	s->jabbers = enetc_port_rd64(hw, ENETC4_PM_RJBR(mac));
+
+	s->hist[0] = enetc_port_rd64(hw, ENETC4_PM_R64(mac));
+	s->hist[1] = enetc_port_rd64(hw, ENETC4_PM_R127(mac));
+	s->hist[2] = enetc_port_rd64(hw, ENETC4_PM_R255(mac));
+	s->hist[3] = enetc_port_rd64(hw, ENETC4_PM_R511(mac));
+	s->hist[4] = enetc_port_rd64(hw, ENETC4_PM_R1023(mac));
+	s->hist[5] = enetc_port_rd64(hw, ENETC4_PM_R1522(mac));
+	s->hist[6] = enetc_port_rd64(hw, ENETC4_PM_R1523X(mac));
+
+	s->hist_tx[0] = enetc_port_rd64(hw, ENETC4_PM_T64(mac));
+	s->hist_tx[1] = enetc_port_rd64(hw, ENETC4_PM_T127(mac));
+	s->hist_tx[2] = enetc_port_rd64(hw, ENETC4_PM_T255(mac));
+	s->hist_tx[3] = enetc_port_rd64(hw, ENETC4_PM_T511(mac));
+	s->hist_tx[4] = enetc_port_rd64(hw, ENETC4_PM_T1023(mac));
+	s->hist_tx[5] = enetc_port_rd64(hw, ENETC4_PM_T1522(mac));
+	s->hist_tx[6] = enetc_port_rd64(hw, ENETC4_PM_T1523X(mac));
+}
+
+static void enetc_get_mac_stats(struct enetc_si *si, int mac,
+				struct ethtool_eth_mac_stats *mac_stats)
 {
 	struct enetc_hw *hw = &si->hw;
 
-	if (is_enetc_rev1(si)) {
-		s->undersize_pkts = enetc_port_rd64(hw, ENETC_PM_RUND(mac));
-		s->oversize_pkts = enetc_port_rd64(hw, ENETC_PM_ROVR(mac));
-		s->fragments = enetc_port_rd64(hw, ENETC_PM_RFRG(mac));
-		s->jabbers = enetc_port_rd64(hw, ENETC_PM_RJBR(mac));
-
-		s->hist[0] = enetc_port_rd64(hw, ENETC_PM_R64(mac));
-		s->hist[1] = enetc_port_rd64(hw, ENETC_PM_R127(mac));
-		s->hist[2] = enetc_port_rd64(hw, ENETC_PM_R255(mac));
-		s->hist[3] = enetc_port_rd64(hw, ENETC_PM_R511(mac));
-		s->hist[4] = enetc_port_rd64(hw, ENETC_PM_R1023(mac));
-		s->hist[5] = enetc_port_rd64(hw, ENETC_PM_R1522(mac));
-		s->hist[6] = enetc_port_rd64(hw, ENETC_PM_R1523X(mac));
-
-		s->hist_tx[0] = enetc_port_rd64(hw, ENETC_PM_T64(mac));
-		s->hist_tx[1] = enetc_port_rd64(hw, ENETC_PM_T127(mac));
-		s->hist_tx[2] = enetc_port_rd64(hw, ENETC_PM_T255(mac));
-		s->hist_tx[3] = enetc_port_rd64(hw, ENETC_PM_T511(mac));
-		s->hist_tx[4] = enetc_port_rd64(hw, ENETC_PM_T1023(mac));
-		s->hist_tx[5] = enetc_port_rd64(hw, ENETC_PM_T1522(mac));
-		s->hist_tx[6] = enetc_port_rd64(hw, ENETC_PM_T1523X(mac));
-	} else {
-		s->undersize_pkts = enetc_port_rd64(hw, ENETC4_PM_RUND(mac));
-		s->oversize_pkts = enetc_port_rd64(hw, ENETC4_PM_ROVR(mac));
-		s->fragments = enetc_port_rd64(hw, ENETC4_PM_RFRG(mac));
-		s->jabbers = enetc_port_rd64(hw, ENETC4_PM_RJBR(mac));
-
-		s->hist[0] = enetc_port_rd64(hw, ENETC4_PM_R64(mac));
-		s->hist[1] = enetc_port_rd64(hw, ENETC4_PM_R127(mac));
-		s->hist[2] = enetc_port_rd64(hw, ENETC4_PM_R255(mac));
-		s->hist[3] = enetc_port_rd64(hw, ENETC4_PM_R511(mac));
-		s->hist[4] = enetc_port_rd64(hw, ENETC4_PM_R1023(mac));
-		s->hist[5] = enetc_port_rd64(hw, ENETC4_PM_R1522(mac));
-		s->hist[6] = enetc_port_rd64(hw, ENETC4_PM_R1523X(mac));
-
-		s->hist_tx[0] = enetc_port_rd64(hw, ENETC4_PM_T64(mac));
-		s->hist_tx[1] = enetc_port_rd64(hw, ENETC4_PM_T127(mac));
-		s->hist_tx[2] = enetc_port_rd64(hw, ENETC4_PM_T255(mac));
-		s->hist_tx[3] = enetc_port_rd64(hw, ENETC4_PM_T511(mac));
-		s->hist_tx[4] = enetc_port_rd64(hw, ENETC4_PM_T1023(mac));
-		s->hist_tx[5] = enetc_port_rd64(hw, ENETC4_PM_T1522(mac));
-		s->hist_tx[6] = enetc_port_rd64(hw, ENETC4_PM_T1523X(mac));
+	switch (si->pdev->revision) {
+	case ENETC_REV1:
+		enetc_mac_stats(hw, mac, mac_stats);
+		break;
+	case ENETC_REV4:
+		enetc4_mac_stats(hw, mac, mac_stats);
+		break;
+	default:
+		break;
 	}
 }
 
@@ -777,11 +725,11 @@ static void enetc_get_eth_mac_stats(struct net_device *ndev,
 
 	switch (mac_stats->src) {
 	case ETHTOOL_MAC_STATS_SRC_EMAC:
-		enetc_mac_stats(si, 0, mac_stats);
+		enetc_get_mac_stats(si, 0, mac_stats);
 		break;
 	case ETHTOOL_MAC_STATS_SRC_PMAC:
 		if (si->hw_features & ENETC_SI_F_QBU)
-			enetc_mac_stats(si, 1, mac_stats);
+			enetc_get_mac_stats(si, 1, mac_stats);
 		break;
 	case ETHTOOL_MAC_STATS_SRC_AGGREGATE:
 		ethtool_aggregate_mac_stats(ndev, mac_stats);
@@ -851,6 +799,23 @@ static void enetc_get_eth_ctrl_stats(struct net_device *ndev,
 	}
 }
 
+static void enetc_get_mac_rmon_stats(struct enetc_si *si, int mac,
+				     struct ethtool_rmon_stats *rmon_stats)
+{
+	struct enetc_hw *hw = &si->hw;
+
+	switch (si->pdev->revision) {
+	case ENETC_REV1:
+		enetc_rmon_stats(hw, mac, rmon_stats);
+		break;
+	case ENETC_REV4:
+		enetc4_rmon_stats(hw, mac, rmon_stats);
+		break;
+	default:
+		break;
+	}
+}
+
 static void enetc_get_rmon_stats(struct net_device *ndev,
 				 struct ethtool_rmon_stats *rmon_stats,
 				 const struct ethtool_rmon_hist_range **ranges)
@@ -862,11 +827,11 @@ static void enetc_get_rmon_stats(struct net_device *ndev,
 
 	switch (rmon_stats->src) {
 	case ETHTOOL_MAC_STATS_SRC_EMAC:
-		enetc_rmon_stats(si, 0, rmon_stats);
+		enetc_get_mac_rmon_stats(si, 0, rmon_stats);
 		break;
 	case ETHTOOL_MAC_STATS_SRC_PMAC:
 		if (si->hw_features & ENETC_SI_F_QBU)
-			enetc_rmon_stats(si, 1, rmon_stats);
+			enetc_get_mac_rmon_stats(si, 1, rmon_stats);
 		break;
 	case ETHTOOL_MAC_STATS_SRC_AGGREGATE:
 		ethtool_aggregate_rmon_stats(ndev, rmon_stats);
@@ -878,6 +843,31 @@ static void enetc_get_rmon_stats(struct net_device *ndev,
 			  RXH_IP_DST)
 #define ENETC_RSSHASH_L4 (ENETC_RSSHASH_L3 | RXH_L4_B_0_1 | RXH_L4_B_2_3)
 static int enetc_get_rsshash(struct ethtool_rxnfc *rxnfc)
+{
+	static const u32 rsshash[] = {
+			[TCP_V4_FLOW]    = ENETC_RSSHASH_L4,
+			[UDP_V4_FLOW]    = ENETC_RSSHASH_L4,
+			[SCTP_V4_FLOW]   = ENETC_RSSHASH_L4,
+			[AH_ESP_V4_FLOW] = ENETC_RSSHASH_L3,
+			[IPV4_FLOW]      = ENETC_RSSHASH_L3,
+			[TCP_V6_FLOW]    = ENETC_RSSHASH_L4,
+			[UDP_V6_FLOW]    = ENETC_RSSHASH_L4,
+			[SCTP_V6_FLOW]   = ENETC_RSSHASH_L4,
+			[AH_ESP_V6_FLOW] = ENETC_RSSHASH_L3,
+			[IPV6_FLOW]      = ENETC_RSSHASH_L3,
+			[ETHER_FLOW]     = 0,
+	};
+
+	if (rxnfc->flow_type >= ARRAY_SIZE(rsshash))
+		return -EINVAL;
+
+	rxnfc->data = rsshash[rxnfc->flow_type];
+
+	return 0;
+}
+
+static int enetc_get_rxfh_fields(struct net_device *netdev,
+				 struct ethtool_rxfh_fields *rxnfc)
 {
 	static const u32 rsshash[] = {
 			[TCP_V4_FLOW]    = ENETC_RSSHASH_L4,
@@ -1034,26 +1024,6 @@ static int enetc_get_rxnfc(struct net_device *ndev, struct ethtool_rxnfc *rxnfc,
 		/* number of entries in use */
 		rxnfc->rule_cnt = j;
 		break;
-	default:
-		return -EOPNOTSUPP;
-	}
-
-	return 0;
-}
-
-static int enetc_ppm_get_rxnfc(struct net_device *ndev,
-			       struct ethtool_rxnfc *rxnfc,
-			       u32 *rule_locs)
-{
-	struct enetc_ndev_priv *priv = netdev_priv(ndev);
-
-	switch (rxnfc->cmd) {
-	case ETHTOOL_GRXRINGS:
-		rxnfc->data = priv->num_rx_rings;
-		break;
-	case ETHTOOL_GRXFH:
-		/* get RSS hash config */
-		return enetc_get_rsshash(rxnfc);
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -1477,6 +1447,14 @@ static u32 enetc_get_rxfh_indir_size(struct net_device *ndev)
 	return priv->si->num_rss;
 }
 
+static int enetc_get_rss_key_base(struct enetc_si *si)
+{
+    if (is_enetc_rev1(si))
+        return ENETC_PRSSK(0);
+
+    return ENETC4_PRSSKR(0);
+}
+
 static int enetc_get_rxfh(struct net_device *ndev,
 			  struct ethtool_rxfh_param *rxfh)
 {
@@ -1509,16 +1487,14 @@ static int enetc_get_rxfh(struct net_device *ndev,
 	return err;
 }
 
-void ecat_enetc_set_rss_key(struct enetc_hw *hw, const u8 *bytes)
+void ecat_enetc_set_rss_key(struct enetc_si *si, const u8 *bytes)
 {
-	struct enetc_si *si = container_of(hw, struct enetc_si, hw);
-	int i;
+	int base = enetc_get_rss_key_base(si);
+    struct enetc_hw *hw = &si->hw;
+    int i;
 
 	for (i = 0; i < ENETC_RSSHASH_KEY_SIZE / 4; i++)
-		if (is_enetc_rev1(si))
-			enetc_port_wr(hw, ENETC_PRSSK(i), ((u32 *)bytes)[i]);
-		else
-			enetc_port_wr(hw, ENETC4_PRSSKR(i), ((u32 *)bytes)[i]);
+        enetc_port_wr(hw, base + i * 4, ((u32 *)bytes)[i]);
 }
 EXPORT_SYMBOL_GPL(ecat_enetc_set_rss_key);
 
@@ -1528,35 +1504,29 @@ static int enetc_set_rxfh(struct net_device *ndev,
 {
 	struct enetc_ndev_priv *priv = netdev_priv(ndev);
 	struct enetc_si *si = priv->si;
-	struct enetc_hw *hw = &si->hw;
 	int err = 0;
 
 	if (rxfh->hfunc != ETH_RSS_HASH_NO_CHANGE &&
 	    rxfh->hfunc != ETH_RSS_HASH_TOP) {
-		netdev_err(ndev, "unsupported hash function\n");
+		netdev_err(ndev, "Only toeplitz hash function is supported\n");
 		return -EOPNOTSUPP;
 	}
 
-	/* set hash key, if PF */
-	if (rxfh->key && enetc_si_is_pf(si))
-		ecat_enetc_set_rss_key(hw, rxfh->key);
+	if (rxfh->key) {
+        if (!enetc_si_is_pf(si)) {
+            netdev_err(ndev, "VF does not support setting key\n");
+
+            return -EOPNOTSUPP;
+        }
+
+        ecat_enetc_set_rss_key(si, rxfh->key);
+    }
 
 	/* set RSS table */
 	if (rxfh->indir)
 		err = si->ops->set_rss_table(si, rxfh->indir, si->num_rss);
 
 	return err;
-}
-
-static void enetc_get_channels(struct net_device *ndev,
-			       struct ethtool_channels *ch)
-{
-	struct enetc_ndev_priv *priv = netdev_priv(ndev);
-
-	ch->max_rx = priv->num_rx_rings;
-	ch->max_tx = priv->num_tx_rings;
-	ch->rx_count = priv->num_rx_rings;
-	ch->tx_count = priv->num_tx_rings;
 }
 
 static void enetc_get_ringparam(struct net_device *ndev,
@@ -1582,6 +1552,82 @@ static void enetc_get_ringparam(struct net_device *ndev,
 		if (val != priv->tx_bd_count)
 			netif_err(priv, hw, ndev, "TxBDR[TBLENR] = %d!\n", val);
 	}
+
+	kernel_ring->rx_buf_len = ENETC_RXB_TRUESIZE(priv->page_order);
+}
+
+static int enetc_check_ringparm(struct enetc_ndev_priv *priv,
+				struct ethtool_ringparam *param,
+				struct kernel_ethtool_ringparam *kernel_param,
+				struct netlink_ext_ack *extack)
+{
+	if (kernel_param->rx_buf_len) {
+		u32 page_size = kernel_param->rx_buf_len << 1;
+		int max_order = get_order(SZ_64K);
+		int order = get_order(page_size);
+
+		page_size = PAGE_SIZE << order;
+		if ((page_size >> 1) != kernel_param->rx_buf_len ||
+		    order > max_order) {
+			NL_SET_ERR_MSG_FMT_MOD(extack,
+					       "rx-buf-len should be 2^i * %lu, i <= %d",
+					       PAGE_SIZE >> 1, max_order);
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+static int enetc_reconfigure_rxbuf_len_cb(struct enetc_ndev_priv *priv,
+					  void *ctx)
+{
+	u32 rx_buf_len = *(u32 *)ctx;
+	u32 page_size;
+	int i;
+
+	/* Because each RX BD uses half a page as its buffer, so the
+	 * page size is rx_buf_len * 2.
+	 */
+	page_size = rx_buf_len << 1;
+	priv->page_order = get_order(page_size);
+
+	for (i = 0; i < priv->num_rx_rings; i++) {
+		struct enetc_bdr *rx_ring = priv->rx_ring[i];
+
+		rx_ring->page_order = priv->page_order;
+		rx_ring->xdp.rxq.frag_size = ENETC_RXB_DMA_SIZE_XDP(priv->page_order);
+	}
+
+	return 0;
+}
+
+static int enetc_set_ringparam(struct net_device *ndev,
+			       struct ethtool_ringparam *param,
+			       struct kernel_ethtool_ringparam *kernel_param,
+			       struct netlink_ext_ack *extack)
+{
+	struct enetc_ndev_priv *priv = netdev_priv(ndev);
+	int err;
+
+	err = enetc_check_ringparm(priv, param, kernel_param, extack);
+	if (err)
+		return err;
+
+	if (kernel_param->rx_buf_len &&
+	    kernel_param->rx_buf_len != ENETC_RXB_TRUESIZE(priv->page_order)) {
+		bool extended = !!(priv->active_offloads & ENETC_F_RX_TSTAMP);
+
+		err = ecat_enetc_reconfigure(priv, extended,
+					enetc_reconfigure_rxbuf_len_cb,
+					&kernel_param->rx_buf_len);
+		if (err) {
+			NL_SET_ERR_MSG_MOD(extack, "Failed to reconfigure enetc");
+			return err;
+		}
+	}
+
+	return 0;
 }
 
 static int enetc_get_coalesce(struct net_device *ndev,
@@ -2128,137 +2174,11 @@ out:
 		enetc4_set_pfpcr(hw, preemptible_tcs);
 }
 
-/* FIXME: Workaround for the link partner's verification failing if ENETC
- * priorly received too much express traffic. The documentation doesn't
- * suggest this is needed.
- */
-static void enetc_restart_emac_rx(struct enetc_si *si)
-{
-	struct enetc_hw *hw = &si->hw;
-	u32 val;
-
-	if (is_enetc_rev1(si)) {
-		val = enetc_port_rd(hw, ENETC_PM0_CMD_CFG);
-
-		enetc_port_wr(hw, ENETC_PM0_CMD_CFG, val & ~ENETC_PM0_RX_EN);
-
-		if (val & ENETC_PM0_RX_EN)
-			enetc_port_wr(hw, ENETC_PM0_CMD_CFG, val);
-	} else {
-		val = enetc_port_rd(hw, ENETC4_PM_CMD_CFG(0));
-
-		enetc_port_wr(hw, ENETC4_PM_CMD_CFG(0), val & ~PM_CMD_CFG_RX_EN);
-
-		if (val & PM_CMD_CFG_RX_EN)
-			enetc_port_wr(hw, ENETC4_PM_CMD_CFG(0), val);
-	}
-}
-
-static void enetc_mm_config(struct enetc_ndev_priv *priv, struct ethtool_mm_cfg *cfg,
-			    u32 add_frag_size)
-{
-	struct enetc_si *si = priv->si;
-	struct enetc_hw *hw = &si->hw;
-	u32 val;
-
-	val = enetc_port_rd(hw, ENETC_PFPMR);
-	if (cfg->pmac_enabled)
-		val |= ENETC_PFPMR_PMACE;
-	else
-		val &= ~ENETC_PFPMR_PMACE;
-	enetc_port_wr(hw, ENETC_PFPMR, val);
-
-	val = enetc_port_rd(hw, ENETC_MMCSR);
-
-	if (cfg->verify_enabled)
-		val &= ~ENETC_MMCSR_VDIS;
-	else
-		val |= ENETC_MMCSR_VDIS;
-
-	if (cfg->tx_enabled)
-		priv->active_offloads |= ENETC_F_QBU;
-	else
-		priv->active_offloads &= ~ENETC_F_QBU;
-
-	/* If link is up, enable/disable MAC Merge right away */
-	if (!(val & ENETC_MMCSR_LINK_FAIL)) {
-		if (!!(priv->active_offloads & ENETC_F_QBU))
-			val |= ENETC_MMCSR_ME;
-		else
-			val &= ~ENETC_MMCSR_ME;
-	}
-
-	val &= ~ENETC_MMCSR_VT_MASK;
-	val |= ENETC_MMCSR_VT(cfg->verify_time);
-
-	val &= ~ENETC_MMCSR_RAFS_MASK;
-	val |= ENETC_MMCSR_RAFS(add_frag_size);
-
-	enetc_port_wr(hw, ENETC_MMCSR, val);
-
-	enetc_restart_emac_rx(si);
-
-	enetc_mm_commit_preemptible_tcs(priv);
-}
-
-static void enetc4_mm_config(struct enetc_ndev_priv *priv, struct ethtool_mm_cfg *cfg,
-			     u32 add_frag_size)
-{
-	struct enetc_si *si = priv->si;
-	struct enetc_hw *hw = &si->hw;
-	u32 val;
-
-	val = enetc_port_rd(hw, ENETC4_MMCSR);
-	if (cfg->pmac_enabled)
-		val = u32_replace_bits(val, MMCSR_ME_4B_BOUNDARY, MMCSR_ME);
-	else
-		val = u32_replace_bits(val, 0, MMCSR_ME);
-
-	if (cfg->verify_enabled)
-		val &= ~MMCSR_VDIS;
-	else
-		val |= MMCSR_VDIS;
-
-	if (cfg->tx_enabled) {
-		priv->active_offloads |= ENETC_F_QBU;
-
-		/* When preemption is enabled on a port, IEEE 1588 PTP
-		 * one-step timestamping is not supported.
-		 */
-		priv->active_offloads &= ~ENETC_F_TX_ONESTEP_SYNC_TSTAMP;
-	} else {
-		priv->active_offloads &= ~ENETC_F_QBU;
-	}
-
-	/* If link is up, enable/disable MAC Merge right away */
-	if (!(val & MMCSR_LINK_FAIL)) {
-		if (!!(priv->active_offloads & ENETC_F_QBU)) {
-			val = u32_replace_bits(val, MMCSR_ME_4B_BOUNDARY, MMCSR_ME);
-
-			/* When preemption is enabled, generation of PAUSE must be
-			 * disabled.
-			 */
-			enetc_port_wr(hw, ENETC4_PPAUONTR, 0);
-			enetc_port_wr(hw, ENETC4_PPAUOFFTR, 0);
-		} else {
-			val = u32_replace_bits(val, 0, MMCSR_ME);
-		}
-	}
-
-	val = u32_replace_bits(val, cfg->verify_time, MMCSR_VT);
-	val = u32_replace_bits(val, add_frag_size, MMCSR_RAFS);
-
-	enetc_port_wr(hw, ENETC4_MMCSR, val);
-
-	enetc_restart_emac_rx(si);
-
-	enetc_mm_commit_preemptible_tcs(priv);
-}
-
 static int enetc_set_mm(struct net_device *ndev, struct ethtool_mm_cfg *cfg,
 			struct netlink_ext_ack *extack)
 {
 	struct enetc_ndev_priv *priv = netdev_priv(ndev);
+	struct enetc_pf *pf = enetc_si_priv(priv->si);
 	struct enetc_si *si = priv->si;
 	u32 add_frag_size;
 	int err;
@@ -2273,14 +2193,36 @@ static int enetc_set_mm(struct net_device *ndev, struct ethtool_mm_cfg *cfg,
 
 	mutex_lock(&priv->mm_lock);
 
-	if (is_enetc_rev1(si))
-		enetc_mm_config(priv, cfg, add_frag_size);
+	if (cfg->tx_enabled)
+		priv->active_offloads |= ENETC_F_QBU;
 	else
-		enetc4_mm_config(priv, cfg, add_frag_size);
+		priv->active_offloads &= ~ENETC_F_QBU;
+
+	pf->ops->set_mm(priv, cfg, add_frag_size);
+
+	enetc_mm_commit_preemptible_tcs(priv);
 
 	mutex_unlock(&priv->mm_lock);
 
 	return 0;
+}
+
+static void enetc4_get_mm_stats(struct net_device *ndev,
+				struct ethtool_mm_stats *s)
+{
+	struct enetc_ndev_priv *priv = netdev_priv(ndev);
+	struct enetc_si *si = priv->si;
+	struct enetc_hw *hw = &si->hw;
+
+	if (!(si->hw_features & ENETC_SI_F_QBU))
+		return;
+
+	s->MACMergeFrameAssErrorCount = enetc_port_rd(hw, ENETC4_MMFAECR);
+	s->MACMergeFrameSmdErrorCount = enetc_port_rd(hw, ENETC4_MMFSECR);
+	s->MACMergeFrameAssOkCount = enetc_port_rd(hw, ENETC4_MMFAOCR);
+	s->MACMergeFragCountRx = enetc_port_rd(hw, ENETC4_MMFCRXR);
+	s->MACMergeFragCountTx = enetc_port_rd(hw, ENETC4_MMFCTXR);
+	s->MACMergeHoldCount = enetc_port_rd(hw, ENETC4_MMHCR);
 }
 
 /* When the link is lost, the verification state machine goes to the FAILED
@@ -2335,10 +2277,11 @@ void ecat_enetc_mm_link_state_update(struct enetc_ndev_priv *priv, bool link)
 }
 EXPORT_SYMBOL_GPL(ecat_enetc_mm_link_state_update);
 
-static const struct ethtool_ops enetc_pf_ethtool_ops = {
+const struct ethtool_ops enetc_pf_ethtool_ops = {
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
 				     ETHTOOL_COALESCE_MAX_FRAMES |
 				     ETHTOOL_COALESCE_USE_ADAPTIVE_RX,
+	.supported_ring_params = ETHTOOL_RING_USE_RX_BUF_LEN,
 	.get_regs_len = enetc_get_reglen,
 	.get_regs = enetc_get_regs,
 	.get_sset_count = enetc_get_sset_count,
@@ -2354,8 +2297,9 @@ static const struct ethtool_ops enetc_pf_ethtool_ops = {
 	.get_rxfh_indir_size = enetc_get_rxfh_indir_size,
 	.get_rxfh = enetc_get_rxfh,
 	.set_rxfh = enetc_set_rxfh,
-	.get_channels = enetc_get_channels,
+	.get_rxfh_fields = enetc_get_rxfh_fields,
 	.get_ringparam = enetc_get_ringparam,
+	.set_ringparam = enetc_set_ringparam,
 	.get_coalesce = enetc_get_coalesce,
 	.set_coalesce = enetc_set_coalesce,
 	.get_link_ksettings = enetc_get_link_ksettings,
@@ -2364,8 +2308,6 @@ static const struct ethtool_ops enetc_pf_ethtool_ops = {
 	.get_ts_info = enetc_get_ts_info,
 	.get_wol = enetc_get_wol,
 	.set_wol = enetc_set_wol,
-	.get_eee = enetc_ethtool_op_get_eee,
-	.set_eee = enetc_ethtool_op_set_eee,
 	.get_pauseparam = enetc_get_pauseparam,
 	.set_pauseparam = enetc_set_pauseparam,
 	.get_mm = enetc_get_mm,
@@ -2373,35 +2315,32 @@ static const struct ethtool_ops enetc_pf_ethtool_ops = {
 	.get_mm_stats = enetc_get_mm_stats,
 };
 
-static const struct ethtool_ops enetc_ppm_ethtool_ops = {
+const struct ethtool_ops enetc4_ppm_ethtool_ops = {
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
 				     ETHTOOL_COALESCE_MAX_FRAMES |
 				     ETHTOOL_COALESCE_USE_ADAPTIVE_RX,
-	.get_regs_len = enetc_ppm_get_reglen,
-	.get_regs = enetc_ppm_get_regs,
-	.get_sset_count = enetc_ppm_get_sset_count,
-	.get_strings = enetc_ppm_get_strings,
-	.get_ethtool_stats = enetc_ppm_get_ethtool_stats,
+	.supported_ring_params = ETHTOOL_RING_USE_RX_BUF_LEN,
 	.get_eth_mac_stats = enetc_ppm_get_eth_mac_stats,
-	.get_rxnfc = enetc_ppm_get_rxnfc,
+	.get_rxnfc = enetc_get_rxnfc,
 	.get_rxfh_key_size = enetc_get_rxfh_key_size,
 	.get_rxfh_indir_size = enetc_get_rxfh_indir_size,
 	.get_rxfh = enetc_get_rxfh,
 	.set_rxfh = enetc_set_rxfh,
+	.get_rxfh_fields = enetc_get_rxfh_fields,
 	.get_ringparam = enetc_get_ringparam,
+	.set_ringparam = enetc_set_ringparam,
 	.get_coalesce = enetc_get_coalesce,
 	.set_coalesce = enetc_set_coalesce,
 	.get_link_ksettings = enetc_get_link_ksettings,
 	.set_link_ksettings = enetc_set_link_ksettings,
 	.get_link = ethtool_op_get_link,
-	.get_wol = enetc_get_wol,
-	.set_wol = enetc_set_wol,
 };
 
-static const struct ethtool_ops enetc_vf_ethtool_ops = {
+const struct ethtool_ops enetc_vf_ethtool_ops = {
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
 				     ETHTOOL_COALESCE_MAX_FRAMES |
 				     ETHTOOL_COALESCE_USE_ADAPTIVE_RX,
+	.supported_ring_params = ETHTOOL_RING_USE_RX_BUF_LEN,
 	.get_regs_len = enetc_get_reglen,
 	.get_regs = enetc_get_regs,
 	.get_sset_count = enetc_get_sset_count,
@@ -2412,25 +2351,54 @@ static const struct ethtool_ops enetc_vf_ethtool_ops = {
 	.get_rxfh_indir_size = enetc_get_rxfh_indir_size,
 	.get_rxfh = enetc_get_rxfh,
 	.set_rxfh = enetc_set_rxfh,
-	.get_channels = enetc_get_channels,
+	.get_rxfh_fields = enetc_get_rxfh_fields,
 	.get_ringparam = enetc_get_ringparam,
+	.set_ringparam = enetc_set_ringparam,
 	.get_coalesce = enetc_get_coalesce,
 	.set_coalesce = enetc_set_coalesce,
 	.get_link = ethtool_op_get_link,
 	.get_ts_info = enetc_get_ts_info,
 };
 
+const struct ethtool_ops enetc4_pf_ethtool_ops = {
+	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
+				     ETHTOOL_COALESCE_MAX_FRAMES |
+				     ETHTOOL_COALESCE_USE_ADAPTIVE_RX,
+	.supported_ring_params = ETHTOOL_RING_USE_RX_BUF_LEN,
+	.get_pause_stats = enetc_get_pause_stats,
+	.get_rmon_stats = enetc_get_rmon_stats,
+	.get_eth_ctrl_stats = enetc_get_eth_ctrl_stats,
+	.get_eth_mac_stats = enetc_get_eth_mac_stats,
+	.get_ringparam = enetc_get_ringparam,
+	.set_ringparam = enetc_set_ringparam,
+	.get_coalesce = enetc_get_coalesce,
+	.set_coalesce = enetc_set_coalesce,
+	.get_link_ksettings = enetc_get_link_ksettings,
+	.set_link_ksettings = enetc_set_link_ksettings,
+	.get_link = ethtool_op_get_link,
+	.get_wol = enetc_get_wol,
+	.set_wol = enetc_set_wol,
+	.get_pauseparam = enetc_get_pauseparam,
+	.set_pauseparam = enetc_set_pauseparam,
+	.get_rxnfc = enetc_get_rxnfc,
+	.set_rxnfc = enetc_set_rxnfc,
+	.get_rxfh_key_size = enetc_get_rxfh_key_size,
+	.get_rxfh_indir_size = enetc_get_rxfh_indir_size,
+	.get_rxfh = enetc_get_rxfh,
+	.set_rxfh = enetc_set_rxfh,
+	.get_rxfh_fields = enetc_get_rxfh_fields,
+	.get_ts_info = enetc_get_ts_info,
+	.get_mm = enetc_get_mm,
+	.set_mm = enetc_set_mm,
+	.get_mm_stats = enetc4_get_mm_stats,
+	.get_eee = enetc_ethtool_op_get_eee,
+	.set_eee = enetc_ethtool_op_set_eee,
+};
+
 void ecat_enetc_set_ethtool_ops(struct net_device *ndev)
 {
 	struct enetc_ndev_priv *priv = netdev_priv(ndev);
 
-	if (enetc_si_is_pf(priv->si)) {
-		if ((priv->si->hw_features & ENETC_SI_F_PPM))
-			ndev->ethtool_ops = &enetc_ppm_ethtool_ops;
-		else
-			ndev->ethtool_ops = &enetc_pf_ethtool_ops;
-	} else {
-		ndev->ethtool_ops = &enetc_vf_ethtool_ops;
-	}
+	ndev->ethtool_ops = priv->si->drvdata->eth_ops;
 }
 EXPORT_SYMBOL_GPL(ecat_enetc_set_ethtool_ops);

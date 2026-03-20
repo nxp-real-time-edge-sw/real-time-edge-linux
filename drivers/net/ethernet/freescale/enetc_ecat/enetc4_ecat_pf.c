@@ -4,6 +4,7 @@
 #include <linux/of_mdio.h>
 #include <linux/of_net.h>
 #include <linux/of_platform.h>
+#include <linux/pcs/pcs-xpcs.h>
 #include <linux/clk.h>
 #include <linux/fsl/enetc_mdio.h>
 #include <linux/pinctrl/consumer.h>
@@ -12,6 +13,7 @@
 #include <linux/fsl/netc_global.h>
 
 #include "enetc_pf.h"
+#include "enetc_devlink.h"
 
 #define ENETC_SI_MAX_RING_NUM	8
 
@@ -47,21 +49,6 @@ static void enetc4_get_port_caps(struct enetc_pf *pf)
 	pf->caps.ipf_words_num = val & IPFTCAPR_NUM_WORDS;
 }
 
-static void enetc4_pf_set_tc_msdu(struct enetc_hw *hw, u32 *max_sdu)
-{
-	int tc;
-
-	for (tc = 0; tc < 8; tc++) {
-		u32 val = ENETC_MAC_MAXFRM_SIZE;
-
-		if (max_sdu[tc])
-			val = max_sdu[tc] + VLAN_ETH_HLEN;
-
-		val = u32_replace_bits(val, SDU_TYPE_MPDU, PTCTMSDUR_SDU_TYPE);
-		enetc_port_wr(hw, ENETC4_PTCTMSDUR(tc), val);
-	}
-}
-
 static void enetc4_pf_reset_tc_msdu(struct enetc_hw *hw)
 {
 	u32 val = ENETC_MAC_MAXFRM_SIZE;
@@ -71,16 +58,6 @@ static void enetc4_pf_reset_tc_msdu(struct enetc_hw *hw)
 
 	for (tc = 0; tc < 8; tc++)
 		enetc_port_wr(hw, ENETC4_PTCTMSDUR(tc), val);
-}
-
-static void enetc4_set_trx_frame_size(struct enetc_pf *pf)
-{
-	struct enetc_si *si = pf->si;
-
-	ecat_enetc_port_mac_wr(si, ENETC4_PM_MAXFRM(0),
-			  ENETC_SET_MAXFRM(ENETC_MAC_MAXFRM_SIZE));
-
-	enetc4_pf_reset_tc_msdu(&si->hw);
 }
 
 /* Allocate the number of MSI-X vectors for per SI. */
@@ -101,6 +78,51 @@ static void enetc4_set_si_msix_num(struct enetc_pf *pf)
 	val = num_msix & 0x3f;
 	for (i = 0; i < pf->caps.num_vsi; i++)
 		enetc_port_wr(hw, ENETC4_PSICFGR2(i + 1), val);
+}
+
+static void enetc4_pf_set_si_mac_promisc(struct enetc_hw *hw, int si,
+                     enum enetc_mac_addr_type type,
+                     bool en)
+{
+    u32 val = enetc_port_rd(hw, ENETC4_PSIPMMR);
+
+    if (type == UC) {
+        if (en)
+            val |= PSIPMMR_SI_MAC_UP(si);
+        else
+            val &= ~PSIPMMR_SI_MAC_UP(si);
+    } else { /* Multicast promiscuous mode. */
+        if (en)
+            val |= PSIPMMR_SI_MAC_MP(si);
+        else
+            val &= ~PSIPMMR_SI_MAC_MP(si);
+    }
+
+    enetc_port_wr(hw, ENETC4_PSIPMMR, val);
+}
+
+static void enetc4_pf_set_si_uc_hash_filter(struct enetc_hw *hw, int si,
+                        u64 hash)
+{
+    enetc_port_wr(hw, ENETC4_PSIUMHFR0(si), lower_32_bits(hash));
+    enetc_port_wr(hw, ENETC4_PSIUMHFR1(si), upper_32_bits(hash));
+}
+
+static void enetc4_pf_set_si_mc_hash_filter(struct enetc_hw *hw, int si,
+                        u64 hash)
+{
+    enetc_port_wr(hw, ENETC4_PSIMMHFR0(si), lower_32_bits(hash));
+    enetc_port_wr(hw, ENETC4_PSIMMHFR1(si), upper_32_bits(hash));
+}
+
+static void enetc4_pf_clear_maft_entries(struct enetc_pf *pf)
+{
+    int i;
+
+    for (i = 0; i < pf->num_mfe; i++)
+        ntmp_maft_delete_entry(&pf->si->ntmp_user, i);
+
+    pf->num_mfe = 0;
 }
 
 static u32 enetc4_psicfgr0_val_construct(bool is_vf, u32 num_tx_bdr, u32 num_rx_bdr)
@@ -170,11 +192,12 @@ static void enetc4_default_rings_allocation(struct enetc_pf *pf)
 
 static void enetc4_allocate_si_rings(struct enetc_pf *pf)
 {
-	if (!pf->devl_priv->si_num_rings[0]) {
-		enetc4_default_rings_allocation(pf);
-	} else {
-		enetc4_devlink_allocate_rings(pf);
-	}
+	struct enetc_devlink_priv *devl_priv = devlink_priv(pf->devlink);
+
+    if (!devl_priv->si_num_rings[0])
+        enetc4_default_rings_allocation(pf);
+    else
+        enetc4_devlink_allocate_rings(pf);
 }
 
 static void enetc4_pf_set_si_vlan_promisc(struct enetc_hw *hw, int si, bool en)
@@ -200,51 +223,6 @@ static void enetc4_set_default_si_vlan_promisc(struct enetc_pf *pf)
 		enetc4_pf_set_si_vlan_promisc(hw, i, true);
 }
 
-static void enetc4_port_si_configure(struct enetc_pf *pf)
-{
-	struct enetc_hw *hw = &pf->si->hw;
-
-	enetc4_allocate_si_rings(pf);
-
-	/* Outer VLAN tag will be used for VLAN filtering */
-	enetc_port_wr(hw, ENETC4_PSIVLANFMR, PSIVLANFMR_VS);
-
-	/* enforce VLAN promisc mode for all SIs */
-	enetc4_set_default_si_vlan_promisc(pf);
-
-	/* Disable SI MAC multicast & unicast promiscuous */
-	enetc_port_wr(hw, ENETC4_PSIPMMR, 0);
-
-	enetc4_set_si_msix_num(pf);
-}
-
-static void enetc4_set_default_rss_key(struct enetc_hw *hw)
-{
-	u8 hash_key[ENETC_RSSHASH_KEY_SIZE];
-
-	/* set up hash key */
-	get_random_bytes(hash_key, ENETC_RSSHASH_KEY_SIZE);
-	ecat_enetc_set_rss_key(hw, hash_key);
-}
-
-static void enetc4_set_isit_key_construct_rule(struct enetc_hw *hw)
-{
-	u32 val;
-
-	/* Key construction rule 0: SMAC + VID */
-	val = ISIDKCCR0_VALID | ISIDKCCR0_SMACP | ISIDKCCR0_OVIDP;
-	enetc_port_wr(hw, ENETC4_ISIDKC0CR0, val);
-
-	/* Key construction rule 1: DMAC + VID */
-	val = ISIDKCCR0_VALID | ISIDKCCR0_DMACP | ISIDKCCR0_OVIDP;
-	enetc_port_wr(hw, ENETC4_ISIDKC1CR0, val);
-
-	/* Enable key construction rule 0 and 1 */
-	val = enetc_port_rd(hw, ENETC4_PISIDCR);
-	val |= PISIDCR_KC0EN | PISIDCR_KC1EN;
-	enetc_port_wr(hw, ENETC4_PISIDCR, val);
-}
-
 static void enetc4_enable_all_si(struct enetc_pf *pf)
 {
 	struct enetc_hw *hw = &pf->si->hw;
@@ -259,23 +237,112 @@ static void enetc4_enable_all_si(struct enetc_pf *pf)
 	enetc_port_wr(hw, ENETC4_PMR, si_bitmap);
 }
 
+static void enetc4_set_timer_select(struct enetc_hw *hw, bool en)
+{
+	u32 val = enetc_port_rd(hw, ENETC4_PCR);
+
+    if (en) {
+        val |= PCR_TIMER_CS;
+	} else {
+        val &= ~PCR_TIMER_CS;
+	}
+
+	enetc_port_wr(hw, ENETC4_PCR, val);
+}
+
+static void enetc4_pf_set_ts_mode(struct enetc_si *si, bool en)
+{
+    u32 val;
+
+	if (si->hw_features & ENETC_SI_F_PPM)
+        return;
+
+	val = ecat_enetc_port_mac_rd(si, ENETC4_PM_CMD_CFG(0));
+	if (en) {
+        val |= PM_CMD_CFG_TS_MODE;
+	} else {
+        val &= ~PM_CMD_CFG_TS_MODE;
+	}
+
+	ecat_enetc_port_mac_wr(si, ENETC4_PM_CMD_CFG(0), val);
+}
+
+static void enetc4_configure_port_si(struct enetc_pf *pf)
+{
+    struct enetc_hw *hw = &pf->si->hw;
+
+    enetc4_allocate_si_rings(pf);
+
+    /* Outer VLAN tag will be used for VLAN filtering */
+    enetc_port_wr(hw, ENETC4_PSIVLANFMR, PSIVLANFMR_VS);
+
+    enetc4_set_default_si_vlan_promisc(pf);
+
+    /* Disable SI MAC multicast & unicast promiscuous */
+    enetc_port_wr(hw, ENETC4_PSIPMMR, 0);
+
+    enetc4_set_si_msix_num(pf);
+
+    enetc4_set_timer_select(hw, true);
+
+    enetc4_pf_set_ts_mode(pf->si, true);
+
+    enetc4_enable_all_si(pf);
+}
+
+static void enetc4_set_trx_frame_size(struct enetc_pf *pf)
+{
+    struct enetc_si *si = pf->si;
+
+    ecat_enetc_port_mac_wr(si, ENETC4_PM_MAXFRM(0),
+              ENETC_SET_MAXFRM(ENETC_MAC_MAXFRM_SIZE));
+
+    enetc4_pf_reset_tc_msdu(&si->hw);
+}
+
+static void enetc_set_default_rss_key(struct enetc_pf *pf)
+{
+    u8 hash_key[ENETC_RSSHASH_KEY_SIZE] = {0};
+
+    /* set up hash key */
+    get_random_bytes(hash_key, ENETC_RSSHASH_KEY_SIZE);
+    ecat_enetc_set_rss_key(pf->si, hash_key);
+}
+
+static void enetc4_set_isit_key_profile(struct enetc_pf *pf)
+{
+    struct enetc_hw *hw = &pf->si->hw;
+    u32 val;
+
+    /* Key construction rule 0: SMAC + VID */
+    val = ISIDKCCR0_VALID | ISIDKCCR0_SMACP | ISIDKCCR0_OVIDP;
+    enetc_port_wr(hw, ENETC4_ISIDKC0CR0, val);
+
+    /* Key construction rule 1: DMAC + VID */
+    val = ISIDKCCR0_VALID | ISIDKCCR0_DMACP | ISIDKCCR0_OVIDP;
+    enetc_port_wr(hw, ENETC4_ISIDKC1CR0, val);
+
+    /* Enable key construction rule 0 and 1 */
+    val = enetc_port_rd(hw, ENETC4_PISIDCR);
+    val |= PISIDCR_KC0EN | PISIDCR_KC1EN;
+    enetc_port_wr(hw, ENETC4_PISIDCR, val);
+}
+
+static void enetc4_enable_ipft_lookup(struct enetc_pf *pf)
+{
+    struct enetc_hw *hw = &pf->si->hw;
+
+    /* Enable ingress port filter table lookup. */
+    enetc_port_wr(hw, ENETC4_PIPFCR, PIPFCR_EN);
+}
+
 static void enetc4_configure_port(struct enetc_pf *pf)
 {
-	struct enetc_hw *hw = &pf->si->hw;
-
-	enetc4_port_si_configure(pf);
-
-	enetc4_set_trx_frame_size(pf);
-
-	enetc4_set_default_rss_key(hw);
-
-	enetc4_set_isit_key_construct_rule(hw);
-
-	/* Master enable for all SIs */
-	enetc4_enable_all_si(pf);
-
-	/* Enable port transmit/receive */
-	enetc_port_wr(hw, ENETC4_POR, 0);
+	enetc4_configure_port_si(pf);
+    enetc4_set_trx_frame_size(pf);
+    enetc_set_default_rss_key(pf);
+    enetc4_set_isit_key_profile(pf);
+    enetc4_enable_ipft_lookup(pf);
 }
 
 static int enetc4_pf_set_mac_exact_filter(struct enetc_pf *pf, int type)
@@ -369,50 +436,134 @@ static void enetc4_pf_set_mac_filter(struct enetc_pf *pf, int type)
 		enetc4_pf_set_mac_hash_filter(pf, type);
 }
 
-static void enetc4_pf_do_set_rx_mode(struct work_struct *work)
+static void enetc4_pf_get_mm(struct enetc_ndev_priv *priv,
+                 struct enetc_mm *mm)
 {
-	struct enetc_si *si = container_of(work, struct enetc_si,
-					   rx_mode_task);
-	struct enetc_ndev_priv *priv = netdev_priv(si->ndev);
-	struct enetc_pf *pf = enetc_si_priv(priv->si);
-	struct net_device *ndev = si->ndev;
-	struct enetc_hw *hw = &si->hw;
-	bool uc_promisc = false;
-	bool mc_promisc = false;
-	int type = 0;
+	struct enetc_hw *hw = &priv->si->hw;
+    u32 val;
 
-	if (!pf->hw_ops->set_si_mac_hash_filter ||
-	    !pf->hw_ops->set_si_mac_promisc)
-		return;
+	val = enetc_port_rd(hw, ENETC4_MMCSR);
+    mm->pmac_enabled = !!(val & MMCSR_ME);
+    mm->tx_enabled = !!(val & MMCSR_LPE);
+    mm->verify_enabled = !(val & MMCSR_VDIS);
+    mm->vsts = FIELD_GET(MMCSR_VSTS, val);
+    mm->rafs = FIELD_GET(MMCSR_RAFS, val);
+    mm->lafs = FIELD_GET(MMCSR_LAFS, val);
+    mm->vt = FIELD_GET(MMCSR_VT, val);
+}
 
-	if (ndev->flags & IFF_PROMISC) {
-		uc_promisc = true;
-		mc_promisc = true;
-	} else if (ndev->flags & IFF_ALLMULTI) {
-		mc_promisc = true;
-		type = ENETC_MAC_FILTER_TYPE_UC;
+static void enetc4_restart_emac_rx(struct enetc_si *si)
+{
+    struct enetc_hw *hw = &si->hw;
+    u32 val;
+
+    val = enetc_port_rd(hw, ENETC4_PM_CMD_CFG(0));
+
+    enetc_port_wr(hw, ENETC4_PM_CMD_CFG(0), val & ~PM_CMD_CFG_RX_EN);
+
+    if (val & PM_CMD_CFG_RX_EN)
+        enetc_port_wr(hw, ENETC4_PM_CMD_CFG(0), val);
+}
+
+static void enetc4_pf_set_mm(struct enetc_ndev_priv *priv,
+                 struct ethtool_mm_cfg *cfg,
+                 u32 add_frag_size)
+{
+    struct enetc_si *si = priv->si;
+    struct enetc_hw *hw = &si->hw;
+    u32 val;
+
+    val = enetc_port_rd(hw, ENETC4_MMCSR);
+    if (cfg->pmac_enabled) {
+        val = u32_replace_bits(val, MMCSR_ME_4B_BOUNDARY, MMCSR_ME);
 	} else {
-		type = ENETC_MAC_FILTER_TYPE_ALL;
+        val = u32_replace_bits(val, MMCSR_ME_DISABLE, MMCSR_ME);
 	}
 
-	pf->hw_ops->set_si_mac_promisc(hw, 0, UC, uc_promisc);
-	pf->hw_ops->set_si_mac_promisc(hw, 0, MC, mc_promisc);
+	if (cfg->verify_enabled) {
+        val &= ~MMCSR_VDIS;
+	} else {
+        val |= MMCSR_VDIS;
+	}
 
-	/* Clear MAC filter */
-	enetc_pf_flush_mac_exact_filter(pf, 0, ENETC_MAC_FILTER_TYPE_ALL);
-	pf->hw_ops->set_si_mac_hash_filter(hw, 0, UC, 0);
-	pf->hw_ops->set_si_mac_hash_filter(hw, 0, MC, 0);
+	/* If link is up, enable/disable MAC Merge right away */
+    if (!(val & MMCSR_LINK_FAIL)) {
+        if (priv->active_offloads & ENETC_F_QBU) {
+            val = u32_replace_bits(val, MMCSR_ME_4B_BOUNDARY, MMCSR_ME);
+			/* When preemption is enabled, generation of PAUSE must be
+             * disabled.
+             */
+            enetc_port_wr(hw, ENETC4_PPAUONTR, 0);
+            enetc_port_wr(hw, ENETC4_PPAUOFFTR, 0);
+        } else {
+            val = u32_replace_bits(val, MMCSR_ME_DISABLE, MMCSR_ME);
+        }
+    }
 
-	enetc4_pf_set_mac_filter(pf, type);
+    val = u32_replace_bits(val, cfg->verify_time, MMCSR_VT);
+    val = u32_replace_bits(val, add_frag_size, MMCSR_RAFS);
+
+    enetc_port_wr(hw, ENETC4_MMCSR, val);
+
+    enetc4_restart_emac_rx(si);
 }
 
-static void enetc4_pf_set_rx_mode(struct net_device *ndev)
+static void enetc4_psi_do_set_rx_mode(struct work_struct *work)
 {
-	struct enetc_ndev_priv *priv = netdev_priv(ndev);
-	struct enetc_si *si = priv->si;
+    struct enetc_si *si = container_of(work, struct enetc_si, rx_mode_task);
+    struct enetc_ndev_priv *priv = netdev_priv(si->ndev);
+    struct enetc_pf *pf = enetc_si_priv(si);
+    struct net_device *ndev = si->ndev;
+    struct enetc_hw *hw = &si->hw;
+    bool uc_promisc = false;
+    bool mc_promisc = false;
+    int type = 0;
 
-	queue_work(si->workqueue, &si->rx_mode_task);
+    rtnl_lock();
+
+	if (!si || !si->ndev) {
+		rtnl_unlock();
+		return;
+	}
+
+    if (unlikely(test_bit(ENETC_SUSPEND, &priv->flags)))
+        goto out;
+
+    if (ndev->flags & IFF_PROMISC) {
+        uc_promisc = true;
+        mc_promisc = true;
+    } else if (ndev->flags & IFF_ALLMULTI) {
+        mc_promisc = true;
+        type = ENETC_MAC_FILTER_TYPE_UC;
+    } else {
+        type = ENETC_MAC_FILTER_TYPE_ALL;
+    }
+
+    enetc4_pf_set_si_mac_promisc(hw, 0, UC, uc_promisc);
+    enetc4_pf_set_si_mac_promisc(hw, 0, MC, mc_promisc);
+
+    if (uc_promisc) {
+        enetc4_pf_set_si_uc_hash_filter(hw, 0, 0);
+        enetc4_pf_clear_maft_entries(pf);
+    }
+
+    if (mc_promisc)
+        enetc4_pf_set_si_mc_hash_filter(hw, 0, 0);
+
+    /* Set new MAC filter */
+    enetc4_pf_set_mac_filter(pf, type);
+
+out:
+    rtnl_unlock();
 }
+
+// static void enetc4_pf_set_rx_mode(struct net_device *ndev)
+// {
+// 	struct enetc_ndev_priv *priv = netdev_priv(ndev);
+// 	struct enetc_si *si = priv->si;
+
+// 	queue_work(si->workqueue, &si->rx_mode_task);
+// }
 
 static const struct net_device_ops enetc4_ndev_ops = {
 	.ndo_open		= ecat_enetc_open,
@@ -422,7 +573,7 @@ static const struct net_device_ops enetc4_ndev_ops = {
 	.ndo_fast_xmit      = enetc4_ecat_fast_xmit,
 	.ndo_fast_recv      = enetc4_ecat_fast_recv,
 	.ndo_set_mac_address	= enetc_pf_set_mac_addr,
-	.ndo_set_rx_mode	= enetc4_pf_set_rx_mode,
+//	.ndo_set_rx_mode	= enetc4_pf_set_rx_mode,
 	.ndo_vlan_rx_add_vid	= enetc_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid	= enetc_vlan_rx_del_vid,
 	.ndo_set_vf_mac		= enetc_pf_set_vf_mac,
@@ -657,8 +808,11 @@ static void enetc4_set_tx_pause(struct enetc_pf *pf, int num_rxbdr, bool tx_paus
 
 static void enetc4_enable_mac(struct enetc_pf *pf, bool en)
 {
+	struct enetc_hw *hw = &pf->si->hw;
 	struct enetc_si *si = pf->si;
 	u32 val;
+
+	enetc_port_wr(hw, ENETC4_POR, en ? 0 : POR_TXDIS | POR_RXDIS);
 
 	val = ecat_enetc_port_mac_rd(si, ENETC4_PM_CMD_CFG(0));
 	val &= ~(PM_CMD_CFG_TX_EN | PM_CMD_CFG_RX_EN);
@@ -768,23 +922,11 @@ static const struct phylink_mac_ops enetc_pl_mac_ops = {
 	.mac_link_down = enetc4_pl_mac_link_down,
 };
 
-static int enetc4_alloc_cls_rules(struct enetc_ndev_priv *priv)
+static void enetc4_pci_remove(void *data)
 {
-	struct enetc_pf *pf = enetc_si_priv(priv->si);
+    struct pci_dev *pdev = data;
 
-	/* Each ingress port filter entry occupies 2 words at least. */
-	priv->max_ipf_entries = pf->caps.ipf_words_num / 2;
-	priv->cls_rules = kcalloc(priv->max_ipf_entries, sizeof(*priv->cls_rules),
-				  GFP_KERNEL);
-	if (!priv->cls_rules)
-		return -ENOMEM;
-
-	return 0;
-}
-
-static void enetc4_free_cls_rules(struct enetc_ndev_priv *priv)
-{
-	kfree(priv->cls_rules);
+    ecat_enetc_pci_remove(pdev);
 }
 
 static void enetc4_pf_set_si_primary_mac(struct enetc_hw *hw, int si, const u8 *addr)
@@ -813,57 +955,8 @@ static void enetc4_pf_get_si_primary_mac(struct enetc_hw *hw, int si, u8 *addr)
 	put_unaligned_le16(lower, addr + 4);
 }
 
-static void enetc4_pf_set_si_based_vlan(struct enetc_hw *hw, int si,
-					u16 vlan, u8 qos)
-{
-	u32 val = 0;
-
-	if (vlan) {
-		val = PSIVLANR_E | (vlan & PSIVLANR_VID);
-		val = u32_replace_bits(val, qos, PSIVLANR_PCP);
-	}
-
-	enetc_port_wr(hw, ENETC4_PSIVLANR(si), val);
-}
-
-static void enetc4_pf_get_si_based_vlan(struct enetc_hw *hw, int si,
-					u32 *vid, u32 *pcp)
-{
-	u32 val = enetc_port_rd(hw, ENETC4_PSIVLANR(si));
-
-	*vid = val & PSIVLANR_VID;
-	*pcp = (val & PSIVLANR_PCP) >> PSIVLANR_PCP_OFF;
-}
-
-static void enetc4_pf_set_si_anti_spoofing(struct enetc_hw *hw, int si, bool en)
-{
-	u32 val = enetc_port_rd(hw, ENETC4_PSICFGR0(si));
-
-	val = (val & ~PSICFGR0_ANTI_SPOOFING) | (en ? PSICFGR0_ANTI_SPOOFING : 0);
-	enetc_port_wr(hw, ENETC4_PSICFGR0(si), val);
-}
-
-static void enetc4_pf_set_si_mac_promisc(struct enetc_hw *hw, int si, int type, bool en)
-{
-	u32 val = enetc_port_rd(hw, ENETC4_PSIPMMR);
-
-	if (type == UC) {
-		if (en)
-			val |= ENETC_PSIPMR_SET_UP(si);
-		else
-			val &= ~ENETC_PSIPMR_SET_UP(si);
-	} else { /* Multicast promiscuous mode. */
-		if (en)
-			val |= ENETC_PSIPMR_SET_MP(si);
-		else
-			val &= ~ENETC_PSIPMR_SET_MP(si);
-	}
-
-	enetc_port_wr(hw, ENETC4_PSIPMMR, val);
-}
-
 static void enetc4_pf_set_si_mac_hash_filter(struct enetc_hw *hw, int si,
-					     int type, u64 hash)
+					     enum enetc_mac_addr_type type, u64 hash)
 {
 	if (type == UC) {
 		enetc_port_wr(hw, ENETC4_PSIUMHFR0(si), lower_32_bits(hash));
@@ -873,66 +966,6 @@ static void enetc4_pf_set_si_mac_hash_filter(struct enetc_hw *hw, int si,
 		enetc_port_wr(hw, ENETC4_PSIMMHFR1(si), upper_32_bits(hash));
 	}
 }
-
-static void enetc4_pf_set_si_vlan_hash_filter(struct enetc_hw *hw, int si, u64 hash)
-{
-	enetc_port_wr(hw, ENETC4_PSIVHFR0(si), lower_32_bits(hash));
-	enetc_port_wr(hw, ENETC4_PSIVHFR1(si), upper_32_bits(hash));
-}
-
-static void enetc4_pf_set_loopback(struct net_device *ndev, bool en)
-{
-	struct enetc_ndev_priv *priv = netdev_priv(ndev);
-	struct enetc_si *si = priv->si;
-	u32 val;
-
-	val = ecat_enetc_port_mac_rd(si, ENETC4_PM_CMD_CFG(0));
-	/* Enable or disable loopback. */
-	val = u32_replace_bits(val, en ? 1 : 0, PM_CMD_CFG_LOOP_EN);
-	/* Default to select MAC level loopback mode if loopback is enabled. */
-	val = u32_replace_bits(val, en ? LPBCK_MODE_MAC_LEVEL : 0,
-			       PM_CMD_CFG_LPBK_MODE);
-
-	ecat_enetc_port_mac_wr(si, ENETC4_PM_CMD_CFG(0), val);
-}
-
-static void enetc4_pf_set_tc_tsd(struct enetc_hw *hw, int tc, bool en)
-{
-	enetc_port_wr(hw, ENETC4_PTCTSDR(tc), en ? PTCTSDR_TSDE : 0);
-}
-
-static bool enetc4_pf_get_time_gating(struct enetc_hw *hw)
-{
-	return !!(enetc_port_rd(hw, ENETC4_PTGSCR) & PTGSCR_TGE);
-}
-
-static void enetc4_pf_set_time_gating(struct enetc_hw *hw, bool en)
-{
-	u32 old_val, val;
-
-	old_val = enetc_port_rd(hw, ENETC4_PTGSCR);
-	val = u32_replace_bits(old_val, en ? 1 : 0, PTGSCR_TGE);
-	if (val != old_val)
-		enetc_port_wr(hw, ENETC4_PTGSCR, val);
-}
-
-static const struct enetc_pf_hw_ops enetc4_pf_hw_ops = {
-	.set_si_primary_mac = enetc4_pf_set_si_primary_mac,
-	.get_si_primary_mac = enetc4_pf_get_si_primary_mac,
-	.set_si_based_vlan = enetc4_pf_set_si_based_vlan,
-	.get_si_based_vlan = enetc4_pf_get_si_based_vlan,
-	.set_si_anti_spoofing = enetc4_pf_set_si_anti_spoofing,
-	.set_si_vlan_promisc = enetc4_pf_set_si_vlan_promisc,
-	.set_si_mac_promisc = enetc4_pf_set_si_mac_promisc,
-	.set_si_mac_hash_filter = enetc4_pf_set_si_mac_hash_filter,
-	.set_si_vlan_hash_filter = enetc4_pf_set_si_vlan_hash_filter,
-	.set_loopback = enetc4_pf_set_loopback,
-	.set_tc_tsd = enetc4_pf_set_tc_tsd,
-	.set_tc_msdu = enetc4_pf_set_tc_msdu,
-	.reset_tc_msdu = enetc4_pf_reset_tc_msdu,
-	.get_time_gating = enetc4_pf_get_time_gating,
-	.set_time_gating = enetc4_pf_set_time_gating,
-};
 
 static void enetc4_get_ntmp_caps(struct enetc_si *si)
 {
@@ -1098,6 +1131,9 @@ static int enetc4_init_ntmp_user(struct enetc_si *si)
 	if (si->revision == ENETC_REV_4_1)
 		user->errata = NTMP_ERR052134;
 
+	/* For ENETC 4.1, all table versions are 0 */
+    memset(&user->tbl, 0, sizeof(user->tbl));
+
 	err = ecat_enetc_init_cbdr(si);
 	if (err)
 		return err;
@@ -1113,7 +1149,7 @@ static int enetc4_init_ntmp_user(struct enetc_si *si)
 	return 0;
 
 free_cbdr:
-	ecat_enetc_enetc_free_cbdr(si);
+	ecat_enetc_free_cbdr(si);
 
 	return err;
 }
@@ -1130,15 +1166,23 @@ static void enetc4_deinit_ntmp_user(struct enetc_si *si)
 	enetc4_clear_flower_list(si);
 	mutex_destroy(&user->flower_lock);
 	enetc4_ntmp_bitmap_free(user);
-	ecat_enetc_enetc_free_cbdr(si);
+	ecat_enetc_free_cbdr(si);
+}
+
+static void enetc4_free_ntmp_user(struct enetc_si *si)
+{
+    struct ntmp_user *user = &si->ntmp_user;
+
+    enetc4_clear_flower_list(si);
+    mutex_destroy(&user->flower_lock);
+    enetc4_ntmp_bitmap_free(user);
+	ecat_enetc_free_cbdr(si);
 }
 
 static int enetc4_pf_init(struct enetc_pf *pf)
 {
 	struct device *dev = &pf->si->pdev->dev;
 	int err;
-
-	enetc_get_ip_revision(pf->si);
 
 	/* Initialize the MAC address for PF and VFs */
 	err = enetc_setup_mac_addresses(dev->of_node, pf);
@@ -1147,7 +1191,7 @@ static int enetc4_pf_init(struct enetc_pf *pf)
 		return err;
 	}
 
-	err =  enetc4_init_ntmp_user(pf->si);
+	err = enetc4_init_ntmp_user(pf->si);
 	if (err) {
 		dev_err(dev, "Failed to init CBDR\n");
 		return err;
@@ -1204,6 +1248,57 @@ static void enetc4_link_deinit(struct enetc_ndev_priv *priv)
 	enetc_mdiobus_destroy(pf);
 }
 
+static int enetc4_psi_wq_task_init(struct enetc_si *si)
+{
+    char wq_name[24];
+
+    INIT_WORK(&si->rx_mode_task, enetc4_psi_do_set_rx_mode);
+    snprintf(wq_name, sizeof(wq_name), "enetc-%s", pci_name(si->pdev));
+    si->workqueue = create_singlethread_workqueue(wq_name);
+    if (!si->workqueue)
+        return -ENOMEM;
+
+    return 0;
+}
+
+static struct pci_dev *enetc4_get_default_timer_pdev(struct enetc_si *si)
+{
+    int domain, bus_number, devfn;
+
+    domain = pci_domain_nr(si->pdev->bus);
+    bus_number = si->pdev->bus->number;
+    switch (si->revision) {
+    case ENETC_REV_4_1:
+        devfn = PCI_DEVFN(24, 0);
+        break;
+    case ENETC_REV_4_3:
+        devfn = PCI_DEVFN(0, 1);
+        break;
+    default:
+        return NULL;
+    }
+
+    return pci_get_domain_bus_and_slot(domain, bus_number, devfn);
+}
+
+static struct pci_dev *enetc4_get_timer_pdev(struct enetc_ndev_priv *priv)
+{
+    struct fwnode_handle *timer_fwnode;
+    struct enetc_si *si = priv->si;
+    struct device_node *timer_np;
+
+    timer_np = of_parse_phandle(si->pdev->dev.of_node, "nxp,ptp-timer", 0);
+    if (!timer_np)
+        return enetc4_get_default_timer_pdev(si);
+
+    timer_fwnode = of_fwnode_handle(timer_np);
+    of_node_put(timer_np);
+    if (!timer_fwnode)
+        return NULL;
+
+    return to_pci_dev(timer_fwnode->dev);
+}
+
 static int enetc4_pf_netdev_create(struct enetc_si *si)
 {
 	struct device *dev = &si->pdev->dev;
@@ -1226,7 +1321,7 @@ static int enetc4_pf_netdev_create(struct enetc_si *si)
 	if (si->pdev->rcec)
 		priv->rcec = si->pdev->rcec;
 
-	priv->ref_clk = devm_clk_get_optional(dev, "enet_ref_clk");
+	priv->ref_clk = devm_clk_get_optional(dev, "ref");
 	if (IS_ERR(priv->ref_clk)) {
 		dev_err(dev, "Get enet_ref_clk failed\n");
 		err = PTR_ERR(priv->ref_clk);
@@ -1236,16 +1331,17 @@ static int enetc4_pf_netdev_create(struct enetc_si *si)
 	enetc_pf_netdev_setup(si, ndev, &enetc4_ndev_ops);
 
 	ecat_enetc_init_si_rings_params(priv);
+
+	err = ecat_enetc_alloc_si_resources(priv);
+    if (err) {
+        dev_err(dev, "Failed to alloc SI resources\n");
+        goto err_config_si;
+    }
+
 	err = ecat_enetc_configure_si(priv);
 	if (err) {
 		dev_err(dev, "Failed to configure SI\n");
 		goto err_config_si;
-	}
-
-	err = enetc4_alloc_cls_rules(priv);
-	if (err) {
-		dev_err(dev, "Failed to alloc cls rules memory\n");
-		goto err_alloc_cls_rules;
 	}
 
 	err = ecat_enetc_alloc_msix(priv);
@@ -1258,29 +1354,49 @@ static int enetc4_pf_netdev_create(struct enetc_si *si)
 	if (err)
 		goto err_link_init;
 
+	err = enetc4_psi_wq_task_init(si);
+    if (err) {
+        dev_err(dev, "Failed to init workqueue\n");
+        goto err_wq_init;
+    }
+
 	err = register_netdev(ndev);
 	if (err) {
 		dev_err(dev, "Failed to register netdev\n");
 		goto err_reg_netdev;
 	}
 
+	priv->timer_pdev = enetc4_get_timer_pdev(priv);
+    if (!priv->timer_pdev) {
+        dev_err(dev, "Failed to get timer device\n");
+        goto err_get_timer_dev;
+    }
+
 	mutex_lock(&priv->fast_ndev_lock);
 
 	return 0;
 
+err_get_timer_dev:
+    unregister_netdev(ndev);
 err_reg_netdev:
-	enetc4_link_deinit(priv);
+	destroy_workqueue(si->workqueue);
+err_wq_init:
+    enetc4_link_deinit(priv);
 err_link_init:
 	ecat_enetc_free_msix(priv);
 err_alloc_msix:
-	enetc4_free_cls_rules(priv);
-err_alloc_cls_rules:
 err_config_si:
+	ecat_enetc_free_si_resources(priv);
 err_clk_get:
 	mutex_destroy(&priv->mm_lock);
 	free_netdev(ndev);
 
 	return err;
+}
+
+static void enetc_free_si_resources(struct enetc_ndev_priv *priv)
+{
+    kfree(priv->cls_rules);
 }
 
 static void enetc4_pf_netdev_destroy(struct enetc_si *si)
@@ -1291,11 +1407,13 @@ static void enetc4_pf_netdev_destroy(struct enetc_si *si)
 	priv = netdev_priv(ndev);
 	mutex_unlock(&priv->fast_ndev_lock);
 	unregister_netdev(ndev);
-	enetc4_link_deinit(priv);
-	ecat_enetc_free_msix(priv);
-	enetc4_free_cls_rules(priv);
-	mutex_destroy(&priv->mm_lock);
-	free_netdev(ndev);
+	cancel_work(&si->rx_mode_task);
+    destroy_workqueue(si->workqueue);
+    enetc4_link_deinit(priv);
+    ecat_enetc_free_msix(priv);
+    enetc_free_si_resources(priv);
+    mutex_destroy(&priv->mm_lock);
+    free_netdev(ndev);
 }
 
 static void enetc4_pf_destroy_vlan_list(struct enetc_pf *pf)
@@ -1376,10 +1494,20 @@ err_pf_init:
 
 static int enetc4_init_devlink(struct enetc_pf *pf)
 {
-	struct enetc_devlink_priv *devl_priv = pf->devl_priv;
-	struct devlink *devlink = priv_to_devlink(devl_priv);
+	struct device *dev = &pf->si->pdev->dev;
+    struct enetc_devlink_priv *devl_priv;
+    struct devlink *devlink;
 	int err;
 
+	err = enetc_devlink_alloc(pf);
+    if (err) {
+        dev_err(dev, "Failed to alloc devlink\n");
+
+        return err;
+    }
+
+	devlink = pf->devlink;
+    devl_priv = devlink_priv(devlink);
 	devl_priv->pf_load = enetc4_pf_load;
 	devl_priv->pf_unload = enetc4_pf_unload;
 
@@ -1396,10 +1524,43 @@ static int enetc4_init_devlink(struct enetc_pf *pf)
 
 static void enetc4_deinit_devlink(struct enetc_pf *pf)
 {
-	struct devlink *devlink = priv_to_devlink(pf->devl_priv);
+	struct devlink *devlink = pf->devlink;
 
 	devlink_unregister(devlink);
 	enetc_devlink_params_unregister(devlink);
+}
+
+static int enetc4_mm_wait_tx_active(struct enetc_hw *hw, int verify_time)
+{
+    int timeout = verify_time * USEC_PER_MSEC * ENETC_MM_VERIFY_RETRIES;
+    u32 val;
+
+    return read_poll_timeout(enetc_port_rd, val,
+                 MMCSR_VSTS_GET(val) == MMCSR_VSTS_SUCCESSFUL,
+                 ENETC_MM_VERIFY_SLEEP_US, timeout,
+                 true, hw, ENETC4_MMCSR);
+}
+
+static void enetc4_pf_set_preemptible_tcs(struct enetc_ndev_priv *priv)
+{
+    struct enetc_hw *hw = &priv->si->hw;
+    u32 preemptible_tcs = 0, val;
+    int err;
+
+    val = enetc_port_rd(hw, ENETC4_MMCSR);
+    if (!(val & MMCSR_ME))
+        goto out;
+
+    if (!(val & MMCSR_VDIS)) {
+        err = enetc4_mm_wait_tx_active(hw, FIELD_GET(MMCSR_VT, val));
+        if (err)
+            goto out;
+    }
+
+    preemptible_tcs = priv->preemptible_tcs;
+
+out:
+    enetc_port_wr(hw, ENETC4_PFPCR, preemptible_tcs);
 }
 
 static void enetc4_get_psi_hw_features(struct enetc_si *si)
@@ -1407,32 +1568,84 @@ static void enetc4_get_psi_hw_features(struct enetc_si *si)
 	struct enetc_hw *hw = &si->hw;
 	u32 val;
 
-	val = enetc_port_rd(hw, ENETC4_PCAPR);
-	if (val & PCAPR_TGS)
-		si->hw_features |= ENETC_SI_F_QBV;
-
 	val = enetc_port_rd(hw, ENETC4_PMCAPR);
-	if (PMCAPR_GET_FP(val) == PMCAPR_FP_SUPP) {
-		si->hw_features |= ENETC_SI_F_QBU;
+	if (FIELD_GET(PMCAPR_FP, val) == PMCAPR_FP_SUPP) {
+        si->hw_features |= ENETC_SI_F_QBU;
+	}
+
+    val = enetc_port_rd(hw, ENETC4_PCAPR);
+    if (val & PCAPR_TGS) {
+        si->hw_features |= ENETC_SI_F_QBV;
 	}
 
 	val = enetc_port_rd(hw, ENETC4_IPCAPR);
-	if (val & IPCAPR_ISID)
+	if (val & IPCAPR_ISID) {
 		si->hw_features |= ENETC_SI_F_PSFP;
+	}
 
 	val = enetc_port_rd(hw, ENETC4_PCAPR);
-	if (val & PCAPR_LINK_TYPE)
+	if (val & PCAPR_LINK_TYPE) {
 		si->hw_features |= ENETC_SI_F_PPM;
+	}
 }
+
+static struct phylink_pcs *enetc4_pf_create_pcs(struct enetc_pf *pf,
+                        struct mii_bus *bus)
+{
+    struct device *dev = &pf->si->pdev->dev;
+    int xpcs_ver;
+
+    switch (pf->si->revision) {
+    case ENETC_REV_4_1:
+        xpcs_ver = DW_XPCS_VER_MX95;
+        break;
+    default:
+        dev_err(dev, "unsupported xpcs version\n");
+        return ERR_PTR(-EOPNOTSUPP);
+    }
+
+    return xpcs_create_mdiodev_with_phy(bus, 0, 16, 0, xpcs_ver, pf->if_mode);
+}
+
+static void enetc4_pf_destroy_pcs(struct phylink_pcs *pcs)
+{
+    xpcs_pcs_destroy(pcs);
+}
+
+static void enetc4_set_si_vlan_ht_filter(struct enetc_si *si, int si_id, u64 hash)
+{
+    struct enetc_hw *hw = &si->hw;
+    int high_reg_off, low_reg_off;
+
+    low_reg_off = ENETC4_PSIVHFR0(si_id);
+    high_reg_off = ENETC4_PSIVHFR1(si_id);
+
+    enetc_port_wr(hw, low_reg_off, lower_32_bits(hash));
+    enetc_port_wr(hw, high_reg_off, upper_32_bits(hash));
+}
+
+static const struct enetc_pf_ops enetc4_pf_ops = {
+    .set_si_primary_mac = enetc4_pf_set_si_primary_mac,
+    .get_si_primary_mac = enetc4_pf_get_si_primary_mac,
+    .get_mm = enetc4_pf_get_mm,
+    .set_mm = enetc4_pf_set_mm,
+    .set_preemptible_tcs = enetc4_pf_set_preemptible_tcs,
+    .set_si_mac_promisc = enetc4_pf_set_si_mac_promisc,
+    .set_si_mac_hash_filter = enetc4_pf_set_si_mac_hash_filter,
+    .set_si_vlan_promisc = enetc4_pf_set_si_vlan_promisc,
+    .set_si_vlan_hash_filter = enetc4_set_si_vlan_ht_filter,
+    .create_pcs = enetc4_pf_create_pcs,
+    .destroy_pcs = enetc4_pf_destroy_pcs,
+};
 
 static int enetc4_pf_struct_init(struct enetc_si *si)
 {
 	struct enetc_pf *pf = enetc_si_priv(si);
-	struct device *dev = &si->pdev->dev;
-	int err;
 
 	pf->si = si;
 	pf->total_vfs = pci_sriov_get_totalvfs(si->pdev);
+	pf->ops = &enetc4_pf_ops;
+
 	if (pf->total_vfs) {
 		pf->vf_state = kcalloc(pf->total_vfs, sizeof(struct enetc_vf_state),
 				       GFP_KERNEL);
@@ -1440,34 +1653,18 @@ static int enetc4_pf_struct_init(struct enetc_si *si)
 			return -ENOMEM;
 	}
 
-	enetc4_get_psi_hw_features(si);
 	enetc4_get_port_caps(pf);
-	enetc_pf_register_hw_ops(pf, &enetc4_pf_hw_ops);
-
-	err = enetc_devlink_alloc(pf);
-	if (err) {
-		dev_err(dev, "Failed to alloc devlink\n");
-		goto free_vf_state;
-	}
-
-	err = enetc4_init_devlink(pf);
-	if (err) {
-		dev_err(dev, "Failed to init devlink\n");
-		goto free_vf_state;
-	}
-
-	INIT_HLIST_HEAD(&pf->mac_list);
-	mutex_init(&pf->mac_list_lock);
-	INIT_HLIST_HEAD(&pf->vlan_list);
-	mutex_init(&pf->vlan_list_lock);
+	enetc4_get_psi_hw_features(si);
+    /* Each ingress port filter entry occupies 2 words at least. */
+    si->max_ipf_entries = pf->caps.ipf_words_num / 2;
 
 	return 0;
-
-free_vf_state:
-	kfree(pf->vf_state);
-
-	return err;
 }
+
+static const struct enetc_si_ops enetc4_psi_ops = {
+    .get_rss_table = ecat_enetc4_get_rss_table,
+    .set_rss_table = ecat_enetc4_set_rss_table,
+};
 
 static void enetc4_pf_struct_deinit(struct enetc_pf *pf)
 {
@@ -1537,22 +1734,26 @@ static int enetc4_pf_probe(struct pci_dev *pdev,
 	struct device *dev = &pdev->dev;
 	struct enetc_si *si;
 	struct enetc_pf *pf;
-	char wq_name[24];
 	int err;
 
-	if (is_enetc_proxy_pf(pdev))
+	if (is_enetc_proxy_pf(pdev)) {
 		return 0;
+	}
 
 	err = enetc_add_emdio_consumer(pdev);
-	if (err)
+	if (err) {
 		return err;
-
-	pinctrl_pm_select_default_state(dev);
+	}
 
 	err = ecat_enetc_pci_probe(pdev, KBUILD_MODNAME, sizeof(*pf));
 	if (err) {
 		dev_err(dev, "PCIe probing failed\n");
 		return err;
+	}
+
+	err = devm_add_action_or_reset(dev, enetc4_pci_remove, pdev);
+    if (err) {
+        return err;
 	}
 
 	/* si is the private data. */
@@ -1563,29 +1764,35 @@ static int enetc4_pf_probe(struct pci_dev *pdev,
 		goto err_ecat_enetc_pci_probe;
 	}
 
+	si->revision = enetc_get_ip_revision(&si->hw);
+    si->ops = &enetc4_psi_ops;
+    err = ecat_enetc_get_driver_data(si);
+    if (err) {
+        return dev_err_probe(dev, err,
+                     "Could not get PF driver data\n");
+	}
+
 	err = enetc4_pf_struct_init(si);
-	if (err)
+	if (err) {
 		goto err_pf_struct_init;
+	}
 
 	pf = enetc_si_priv(si);
-	INIT_WORK(&si->rx_mode_task, enetc4_pf_do_set_rx_mode);
-	snprintf(wq_name, sizeof(wq_name), "enetc-%s", pci_name(pdev));
-	si->workqueue = create_singlethread_workqueue(wq_name);
-	if (!si->workqueue) {
-		err = -ENOMEM;
-		goto err_create_wq;
+	err = enetc4_init_devlink(pf);
+    if (err) {
+        goto err_create_wq;
 	}
 
 	err = enetc4_pf_init(pf);
-	if (err)
+	if (err) {
 		goto err_pf_init;
+	}
 
 	ecat_enetc_get_si_caps(si);
 	err = enetc4_pf_netdev_create(si);
-	if (err)
+	if (err) {
 		goto err_netdev_create;
-
-	enetc_create_debugfs(si);
+	}
 
 	return 0;
 
@@ -1602,6 +1809,16 @@ err_ecat_enetc_pci_probe:
 	return err;
 }
 
+static void enetc4_pf_struct_free(struct enetc_pf *pf)
+{
+    kfree(pf->vf_state);
+}
+
+static void enetc4_pf_free(struct enetc_pf *pf)
+{
+    enetc4_free_ntmp_user(pf->si);
+}
+
 static void enetc4_pf_remove(struct pci_dev *pdev)
 {
 	struct enetc_si *si;
@@ -1613,17 +1830,15 @@ static void enetc4_pf_remove(struct pci_dev *pdev)
 	}
 
 	si = pci_get_drvdata(pdev);
-	enetc_remove_debugfs(si);
 
 	pf = enetc_si_priv(si);
 	if (pf->num_vfs)
 		enetc_sriov_configure(pdev, 0);
 
 	enetc4_pf_netdev_destroy(si);
-	enetc4_pf_deinit(pf);
-	destroy_workqueue(si->workqueue);
-	enetc4_pf_struct_deinit(pf);
-	ecat_enetc_pci_remove(pdev);
+	enetc4_pf_free(pf);
+    enetc4_deinit_devlink(pf);
+    enetc4_pf_struct_free(pf);
 }
 
 static const struct pci_device_id enetc4_pf_id_table[] = {
@@ -1711,7 +1926,7 @@ static void enetc4_pf_power_down(struct enetc_si *si)
 	if (pf->pcs)
 		enetc4_pf_imdio_regulator_disable(pf);
 	ecat_enetc_free_msix(priv);
-	ecat_enetc_enetc_free_cbdr(si);
+	ecat_enetc_free_cbdr(si);
 	pci_disable_device(pdev);
 	pcie_flr(pdev);
 }
@@ -1775,7 +1990,7 @@ err_imdio_reg_enable:
 err_alloc_msix:
 err_config_si:
 err_init_address:
-	ecat_enetc_enetc_free_cbdr(si);
+	ecat_enetc_free_cbdr(si);
 err_init_cbdr:
 	pci_disable_device(pdev);
 

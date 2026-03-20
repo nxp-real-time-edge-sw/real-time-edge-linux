@@ -148,8 +148,7 @@ enum enetc_bdr_type {TX, RX};
 #define ENETC_RBLENR	0x20
 #define ENETC_RBRSCR	0x30
 #define ENETC_RBRSCR_EN	BIT(31)
-#define ENETC_RBRSCR_SIZE_MASK	0xffff
-#define ENETC_RBRSCR_SIZE(n)	((n) & ENETC_RBRSCR_SIZE_MASK)
+#define ENETC_RBRSCR_SIZE   0xffff
 #define ENETC_RBIER	0xa0
 #define ENETC_RBIER_RXTIE	BIT(0)
 #define ENETC_RBIDR	0xa4
@@ -599,12 +598,16 @@ union enetc_tx_bd {
 		};
 		union {
 			struct {
-				u8 l3_start:7;
-				u8 ipcs:1;
-				u8 l3_hdr_size:7;
-				u8 l3t:1;
-				u8 resv:5;
-				u8 l4t:3;
+                u8 l3_aux0;
+#define ENETC_TX_BD_L3_START    GENMASK(6, 0)
+#define ENETC_TX_BD_IPCS    BIT(7)
+                u8 l3_aux1;
+#define ENETC_TX_BD_L3_HDR_LEN  GENMASK(6, 0)
+#define ENETC_TX_BD_L3T     BIT(7)
+                u8 l4_aux;
+#define ENETC_TX_BD_L4T     GENMASK(7, 5)
+#define ENETC_TXBD_L4T_UDP  1
+#define ENETC_TXBD_L4T_TCP  2
 				u8 flags;
 			}; /* default layout */
 			__le32 txstart;
@@ -644,10 +647,9 @@ enum enetc_txbd_flags {
 #define ENETC_TXBD_STATS_WIN	BIT(7)
 #define ENETC_TXBD_TXSTART_MASK GENMASK(24, 0)
 #define ENETC_TXBD_FLAGS_OFFSET 24
+#define ENETC_TXBD_TSTAMP   GENMASK(29, 0)
 
 #define ENETC_TXBD_L4T_NONE	0
-#define ENETC_TXBD_L4T_UDP	BIT(0)
-#define ENETC_TXBD_L4T_TCP	BIT(1)
 
 static inline __le32 enetc_txbd_set_tx_start(u64 tx_start, u8 flags)
 {
@@ -1207,6 +1209,9 @@ struct enetc_cbd {
 
 #define ENETC_CLK  400000000ULL
 #define ENETC4_CLK 333000000ULL
+#define ENETC_CLK_400M      400000000ULL
+#define ENETC_CLK_333M      333000000ULL
+
 static inline u32 enetc_cycles_to_usecs(u32 cycles, u64 clk_freq)
 {
 	return (u32)div_u64(cycles * 1000000ULL, clk_freq);

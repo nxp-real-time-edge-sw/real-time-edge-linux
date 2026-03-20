@@ -71,11 +71,9 @@
 #define ENETC4_PICDRDCR(a)	((a) * 0x10 + 0x140)
 
 /* Port Station interface promiscuous MAC mode register */
-#define ENETC4_PSIPMMR		0x200
-#define  PSIPMMR_SI0_MAC_UP	BIT(0)
-#define  PSIPMMR_SI_MAC_UP	GENMASK(2, 0)
-#define  PSIPMMR_SI0_MAC_MP	BIT(16)
-#define  PSIPMMR_SI_MAC_MP	GENMASK(18, 16)
+#define ENETC4_PSIPMMR          0x200
+#define  PSIPMMR_SI_MAC_UP(a)       BIT(a) /* a = SI index */
+#define  PSIPMMR_SI_MAC_MP(a)       BIT((a) + 16)
 
 /* Port Station interface promiscuous VLAN mode register */
 #define ENETC4_PSIPVMR		0x204
@@ -255,6 +253,8 @@
 
 /* Port operational register */
 #define ENETC4_POR		0x4100
+#define  POR_TXDIS          BIT(0)
+#define  POR_RXDIS          BIT(1)
 
 /* Port status register */
 #define ENETC4_PSR		0x4104
@@ -346,7 +346,8 @@
 #define ENETC4_PM_SINGLE_STEP(mac)	(0x50C0 + (mac) * 0x400)
 #define  PM_SINGLE_STEP_CH		BIT(6)
 #define  PM_SINGLE_STEP_OFFSET_MASK	GENMASK(15, 7)
-#define   PM_SINGLE_STEP_OFFSET(v)	(((v) << 7) & PM_SINGLE_STEP_OFFSET_MASK)
+#define  PM_SINGLE_STEP_OFFSET      GENMASK(15, 7)
+#define  PM_SINGLE_STEP_OFFSET_SET(o)   FIELD_PREP(PM_SINGLE_STEP_OFFSET, o)
 #define  PM_SINGLE_STEP_EN		BIT(31)
 
 /* Port MAC 0/1 Receive Ethernet Octets Counter */
@@ -520,6 +521,8 @@
 
 /* Port MAC Merge Control and Status Register */
 #define ENETC4_MMCSR			0x5800
+#define  MMCSR_LPE          BIT(1)
+#define  MMCSR_LAFS         GENMASK(4, 3)
 #define  MMCSR_RAFS			GENMASK(9, 8)
 #define  MMCSR_ME			GENMASK(16, 15)
 #define   MMCSR_ME_DISABLE		0
@@ -531,6 +534,7 @@
 #define   MMCSR_VSTS_IN_PROGRESS	2
 #define   MMCSR_VSTS_SUCCESSFUL		3
 #define   MMCSR_VSTS_FAILED		4
+#define   MMCSR_VSTS_GET(v)     FIELD_GET(MMCSR_VSTS, v)
 #define   MMCSR_GET_VSTS(x)		(((x) & MMCSR_VSTS) >> 18)
 #define  MMCSR_VT			GENMASK(29, 23)
 #define   MMCSR_GET_VT(x)		(((x) & MMCSR_VT) >> 23)

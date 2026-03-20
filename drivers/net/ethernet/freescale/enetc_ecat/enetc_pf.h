@@ -132,6 +132,9 @@ struct enetc_pf {
 	struct hlist_head vlan_list; /* VLAN address filter table */
 	struct mutex vlan_list_lock; /* mac_list lock */
 	int num_vlan_fe; /* number of VLAN address filter table entries */
+
+	int num_mfe;    /* number of mac address filter table entries */
+	struct devlink *devlink;
 };
 
 #define phylink_to_enetc_pf(config) \
@@ -171,7 +174,10 @@ int enetc_pf_set_mac_exact_filter(struct enetc_pf *pf, int si_id,
 				  struct enetc_mac_entry *mac,
 				  int mac_cnt);
 int enetc_pf_send_msg(struct enetc_pf *pf, u32 msg_code, u16 ms_mask);
-void enetc_get_ip_revision(struct enetc_si *si);
+static inline u16 enetc_get_ip_revision(struct enetc_hw *hw)
+{
+    return enetc_global_rd(hw, ENETC_G_EIPBRR0) & EIPBRR0_REVISION;
+}
 
 static inline void enetc_pf_register_hw_ops(struct enetc_pf *pf,
 					    const struct enetc_pf_hw_ops *hw_ops)
