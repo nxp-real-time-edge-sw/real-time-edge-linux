@@ -11,6 +11,7 @@
 #include <linux/module.h>
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
+#include <linux/irq.h>
 #include <linux/property.h>
 #include <linux/regmap.h>
 #include <linux/usb/pd.h>
@@ -980,6 +981,7 @@ static int tcpci_probe(struct i2c_client *client)
 	if (IS_ERR(chip->tcpci))
 		return PTR_ERR(chip->tcpci);
 
+	irq_set_status_flags(client->irq, IRQ_DISABLE_UNLAZY);
 	err = devm_request_threaded_irq(&client->dev, client->irq, NULL,
 					_tcpci_irq,
 					IRQF_SHARED | IRQF_ONESHOT,
@@ -1012,6 +1014,7 @@ static void tcpci_remove(struct i2c_client *client)
 		dev_warn(&client->dev, "Failed to disable irqs (%pe)\n", ERR_PTR(err));
 
 	tcpci_unregister_port(chip->tcpci);
+	irq_clear_status_flags(client->irq, IRQ_DISABLE_UNLAZY);
 }
 
 static int tcpci_suspend(struct device *dev)
