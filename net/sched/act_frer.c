@@ -57,13 +57,10 @@ static enum hrtimer_restart frer_hrtimer_func(struct hrtimer *timer)
 {
 	struct tcf_frer *frer_act = container_of(timer, struct tcf_frer,
 						 hrtimer);
-	ktime_t remaining_tm;
 
 	frer_seq_recovery_reset(frer_act);
 
-	remaining_tm = (ktime_t)(frer_act->rcvy_reset_msec * 1000000);
-
-	hrtimer_set_expires(timer, ktime_get() + remaining_tm);
+	hrtimer_forward_now(timer, ms_to_ktime(frer_act->rcvy_reset_msec));
 
 	return HRTIMER_RESTART;
 }
@@ -307,8 +304,8 @@ static int tcf_frer_init(struct net *net, struct nlattr *nla,
 			      HRTIMER_MODE_ABS_SOFT);
 
 		remaining_tm = (ktime_t)(frer_act->rcvy_reset_msec * 1000000);
-		hrtimer_start(&frer_act->hrtimer, remaining_tm,
-			      HRTIMER_MODE_REL_SOFT);
+		hrtimer_start(&frer_act->hrtimer, remaining_tm + ktime_get(),
+			      HRTIMER_MODE_ABS_SOFT);
 	}
 
 	spin_unlock_bh(&frer_act->tcf_lock);
