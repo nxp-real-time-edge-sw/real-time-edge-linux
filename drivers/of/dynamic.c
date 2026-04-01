@@ -653,6 +653,9 @@ static inline int __of_changeset_entry_revert(const struct of_changeset_entry *c
  */
 void of_changeset_init(struct of_changeset *ocs)
 {
+	if (!ocs)
+		return;
+
 	memset(ocs, 0, sizeof(*ocs));
 	INIT_LIST_HEAD(&ocs->entries);
 }
@@ -669,6 +672,9 @@ EXPORT_SYMBOL_GPL(of_changeset_init);
 void of_changeset_destroy(struct of_changeset *ocs)
 {
 	struct of_changeset_entry *ce, *cen;
+
+	if (!ocs)
+		return;
 
 	/*
 	 * When a device is deleted, the device links to/from it are also queued
@@ -701,6 +707,9 @@ int __of_changeset_apply_entries(struct of_changeset *ocs, int *ret_revert)
 	struct of_changeset_entry *ce;
 	int ret, ret_tmp;
 
+	if (!ocs)
+		return -EINVAL;
+
 	pr_debug("changeset: applying...\n");
 	list_for_each_entry(ce, &ocs->entries, node) {
 		ret = __of_changeset_entry_apply(ce);
@@ -709,7 +718,7 @@ int __of_changeset_apply_entries(struct of_changeset *ocs, int *ret_revert)
 			list_for_each_entry_continue_reverse(ce, &ocs->entries,
 							     node) {
 				ret_tmp = __of_changeset_entry_revert(ce);
-				if (ret_tmp)
+				if (ret_tmp && ret_revert)
 					*ret_revert = ret_tmp;
 			}
 			return ret;
@@ -729,6 +738,9 @@ int __of_changeset_apply_notify(struct of_changeset *ocs)
 {
 	struct of_changeset_entry *ce;
 	int ret = 0, ret_tmp;
+
+	if (!ocs)
+		return -EINVAL;
 
 	pr_debug("changeset: emitting notifiers.\n");
 
@@ -805,6 +817,9 @@ int __of_changeset_revert_entries(struct of_changeset *ocs, int *ret_apply)
 	struct of_changeset_entry *ce;
 	int ret, ret_tmp;
 
+	if (!ocs)
+		return -EINVAL;
+
 	pr_debug("changeset: reverting...\n");
 	list_for_each_entry_reverse(ce, &ocs->entries, node) {
 		ret = __of_changeset_entry_revert(ce);
@@ -812,7 +827,7 @@ int __of_changeset_revert_entries(struct of_changeset *ocs, int *ret_apply)
 			pr_err("Error reverting changeset (%d)\n", ret);
 			list_for_each_entry_continue(ce, &ocs->entries, node) {
 				ret_tmp = __of_changeset_entry_apply(ce);
-				if (ret_tmp)
+				if (ret_tmp && ret_apply)
 					*ret_apply = ret_tmp;
 			}
 			return ret;
@@ -830,6 +845,9 @@ int __of_changeset_revert_notify(struct of_changeset *ocs)
 {
 	struct of_changeset_entry *ce;
 	int ret = 0, ret_tmp;
+
+	if (!ocs)
+		return -EINVAL;
 
 	pr_debug("changeset: emitting notifiers.\n");
 
@@ -904,6 +922,9 @@ int of_changeset_action(struct of_changeset *ocs, unsigned long action,
 		struct device_node *np, struct property *prop)
 {
 	struct of_changeset_entry *ce;
+
+	if (!ocs)
+		return -EINVAL;
 
 	if (WARN_ON(action >= ARRAY_SIZE(action_names)))
 		return -EINVAL;
