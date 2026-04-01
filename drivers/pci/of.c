@@ -743,6 +743,14 @@ void of_pci_remove_host_bridge_node(struct pci_host_bridge *bridge)
 	if (!np || !of_node_check_flag(np, OF_DYNAMIC))
 		return;
 
+	/*
+	 * Skip if no changeset data, e.g.,
+	 * - Failed to allocate 'cset' in of_pci_make_host_bridge_node()
+	 * - Or the bridge node is created by external overlay
+	 */
+	if (!np->data)
+		return;
+
 	device_remove_of_node(&bridge->bus->dev);
 	device_remove_of_node(&bridge->dev);
 	of_changeset_revert(np->data);
