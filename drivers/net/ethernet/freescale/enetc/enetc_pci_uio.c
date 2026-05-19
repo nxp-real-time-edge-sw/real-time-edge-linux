@@ -41,6 +41,7 @@
 
 #define DRV_NAME ("enetc_pci_uio")
 #define BD_SIZE (4096)
+#define  PM_CMD_CFG_HD_FCEN           BIT(18)
 
 /*
  * Enable EtherCAT link support
