@@ -146,7 +146,8 @@ dtb-$(CONFIG_ARCH_MXC) += imx8mm-evk.dtb imx8mm-evk-rpmsg.dtb imx8mm-evk-rm67191
 			  imx8mm-evk-harpoon-virtio-net.dtb \
 			  imx8mm-evk-rm67199.dtb imx8mm-evk-rm67191-cmd-ram.dtb imx8mm-evk-rm67199-cmd-ram.dtb \
 			  imx8mm-evk-lk.dtb imx8mm-evk-rm692c9.dtb \
-			  imx8mm-evk-rpmsg-8m-buf.dtb
+			  imx8mm-evk-rpmsg-8m-buf.dtb \
+			  imx8mm-evk-ecat.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mm-evk-rpmsg-wm8524.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mm-evk-rpmsg-ca53.dtb \
 			  imx8mm-evk-virtio-perf-ca53.dtb \
@@ -307,7 +308,8 @@ dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk.dtb imx8mp-evk-rm67191.dtb imx8mp-evk-it626
 			  imx8mp-evk-iqaudio-dacplus.dtb imx8mp-evk-iqaudio-dacpro.dtb imx8mp-evk-hifiberry-dacplus.dtb \
 			  imx8mp-evk-hifiberry-dac2.dtb imx8mp-evk-hifiberry-dacplusadc.dtb \
 			  imx8mp-evk-rm67199.dtb  imx8mp-evk-rm692c9.dtb \
-			  imx8mp-evk-dpdk.dtb imx8mp-evk-8mic-swpdm.dtb imx8mp-evk-revA3-8mic-revE.dtb
+			  imx8mp-evk-dpdk.dtb imx8mp-evk-8mic-swpdm.dtb imx8mp-evk-revA3-8mic-revE.dtb \
+			  imx8mp-evk-ecat.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-hummingboard-mate.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-hummingboard-pro.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-hummingboard-pulse.dtb
@@ -683,7 +685,8 @@ dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk.dtb \
 			  imx93-11x11-evk-virtio-net-cm33.dtb \
 			  imx93-11x11-evk-ecat.dtb \
 			  imx93-11x11-evk-multicore-rpmsg.dtb \
-			  imx93-11x11-evk-multicore-rtos.dtb
+			  imx93-11x11-evk-multicore-rtos.dtb \
+			  imx93-11x11-evk-ecat.dtb
 
 imx93-11x11-evk-boe-wxga-lvds-panel-dtbs := imx93-11x11-evk.dtb imx93-11x11-evk-boe-wxga-lvds-panel.dtbo
 dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk-boe-wxga-lvds-panel.dtb
