@@ -686,7 +686,8 @@ dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk.dtb \
 			  imx93-11x11-evk-ecat.dtb \
 			  imx93-11x11-evk-multicore-rpmsg.dtb \
 			  imx93-11x11-evk-multicore-rtos.dtb \
-			  imx93-11x11-evk-ecat.dtb
+			  imx93-11x11-evk-ecat.dtb \
+			  imx93-11x11-evk-igh.dtb
 
 imx93-11x11-evk-boe-wxga-lvds-panel-dtbs := imx93-11x11-evk.dtb imx93-11x11-evk-boe-wxga-lvds-panel.dtbo
 dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk-boe-wxga-lvds-panel.dtb
