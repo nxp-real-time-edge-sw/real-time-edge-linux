@@ -931,6 +931,7 @@ dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-flexspi-m2.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-mqs.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-multicore-rtos.dtb imx95-15x15-evk-multicore-rpmsg.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-aud-hat.dtb
+dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-lpuart.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-8mic-reve.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-ab2.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx95-15x15-evk-i2c-spi-slave.dtb
