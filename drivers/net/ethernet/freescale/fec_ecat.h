@@ -191,6 +191,18 @@
 #define FEC_LPI_WAKE		0xfff
 #endif /* CONFIG_M5272 */
 
+#define FEC_DRV_RESERVE_SPACE (XDP_PACKET_HEADROOM + \
+        SKB_DATA_ALIGN(sizeof(struct skb_shared_info)))
+#define FEC_ENET_XDP_HEADROOM   (XDP_PACKET_HEADROOM)
+#define FEC_ENET_RX_PAGES   256
+#define FEC_ENET_RX_FRSIZE  (PAGE_SIZE - FEC_DRV_RESERVE_SPACE)
+#define FEC_ENET_RX_FRPPG   (PAGE_SIZE / FEC_ENET_RX_FRSIZE)
+#define FEC_RX_RING_SIZE        (FEC_ENET_RX_FRPPG * FEC_ENET_RX_PAGES)
+#define FEC_ENET_TX_FRSIZE  2048
+#define FEC_ENET_TX_FRPPG   (PAGE_SIZE / FEC_ENET_TX_FRSIZE)
+#define FEC_TX_RING_SIZE        1024    /* Must be power of two */
+#define TX_RING_MOD_MASK    511 /*   for this to work */
+#define FEC_XSK_TX_BUDGET_MAX   256
 
 /*
  *	Define the buffer descriptor structure.
