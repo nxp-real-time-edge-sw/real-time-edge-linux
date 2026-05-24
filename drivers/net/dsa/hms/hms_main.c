@@ -593,6 +593,7 @@ static int hms_port_mqprio_set(struct dsa_switch *ds, int port,
 	struct tc_mqprio_qopt *qopt = &mqprio->qopt;
 	struct dsa_port *dp;
 	uint8_t *map;
+	int rc;
 
 	dp = dsa_to_port(ds, port);
 
@@ -604,7 +605,15 @@ static int hms_port_mqprio_set(struct dsa_switch *ds, int port,
 	if (!qopt->num_tc)
 		map = hms_default_priority_map;
 
-	return hms_port_priority_map(priv, port, map);
+	rc = hms_port_priority_map(priv, port, map);
+	if (rc)
+		return rc;
+
+	rc = hms_port_set_preemptible_tcs(ds, port, mqprio->preemptible_tcs);
+	if (rc)
+		return rc;
+
+	return rc;
 }
 
 static int hms_port_taprio_set(struct dsa_switch *ds, int port,
@@ -871,6 +880,8 @@ static const struct dsa_switch_ops hms_switch_ops = {
 	.tag_8021q_vlan_del	= hms_8021q_vlan_del,
 	.port_prechangeupper	= hms_prechangeupper,
 	.port_setup_tc		= hms_port_setup_tc,
+	.set_mm			= hms_port_set_mm,
+	.get_mm			= hms_port_get_mm,
 };
 
 static const struct of_device_id hms_dt_ids[];
