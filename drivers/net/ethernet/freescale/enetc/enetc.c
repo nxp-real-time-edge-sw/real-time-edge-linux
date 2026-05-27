@@ -2997,6 +2997,10 @@ static int enetc_poll(struct napi_struct *napi, int budget)
 			complete = false;
 	enetc_unlock_mdio();
 
+	/* Handle case where we are called by netpoll with a budget of 0 */
+	if (unlikely(budget <= 0))
+		return budget;
+
 	prog = rx_ring->xdp.prog;
 	pool = rx_ring->xdp.xsk_pool;
 
