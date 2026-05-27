@@ -3026,22 +3026,22 @@ static int enetc_poll(struct napi_struct *napi, int budget)
 	if (!complete)
 		return budget;
 
-	napi_complete_done(napi, work_done);
+	if (napi_complete_done(napi, work_done)) {
+		if (likely(v->rx_dim_en))
+			enetc_rx_net_dim(v);
 
-	if (likely(v->rx_dim_en))
-		enetc_rx_net_dim(v);
+		v->rx_napi_work = false;
 
-	v->rx_napi_work = false;
+		enetc_lock_mdio();
+		/* enable interrupts */
+		enetc_wr_reg_hot(v->rbier, ENETC_RBIER_RXTIE);
 
-	enetc_lock_mdio();
-	/* enable interrupts */
-	enetc_wr_reg_hot(v->rbier, ENETC_RBIER_RXTIE);
+		for_each_set_bit(i, &v->tx_rings_map, ENETC_MAX_NUM_TXQS)
+			enetc_wr_reg_hot(v->tbier_base + ENETC_BDR_OFF(i),
+			ENETC_TBIER_TXTIE);
 
-	for_each_set_bit(i, &v->tx_rings_map, ENETC_MAX_NUM_TXQS)
-		enetc_wr_reg_hot(v->tbier_base + ENETC_BDR_OFF(i),
-				 ENETC_TBIER_TXTIE);
-
-	enetc_unlock_mdio();
+		enetc_unlock_mdio();
+	}
 
 	return work_done;
 }
