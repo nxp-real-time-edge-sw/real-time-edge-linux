@@ -7,6 +7,7 @@
 #include <linux/module.h>
 #include <linux/of_mdio.h>
 #include <linux/of_net.h>
+#include <linux/platform_device.h>
 #include <linux/kthread.h>
 #include <linux/io.h>
 #include <linux/if_arp.h>	/* arp_hdr_len() */
@@ -309,10 +310,11 @@ static void __hot _dpa_tx_conf(struct net_device	*net_dev,
 		dev_kfree_skb(skb);
 }
 
-static enum qman_cb_dqrr_result
-priv_rx_error_dqrr(struct qman_portal		*portal,
-		   struct qman_fq		*fq,
-		   const struct qm_dqrr_entry	*dq)
+static enum qman_cb_dqrr_result priv_rx_error_dqrr(struct qman_portal *portal,
+						   struct qman_fq *fq,
+						   const struct qm_dqrr_entry *dq,
+						   bool sched_napi,
+						   struct qman_poll_ctx *ctx)
 {
 	struct net_device		*net_dev;
 	struct dpa_priv_s		*priv;
@@ -338,9 +340,9 @@ priv_rx_error_dqrr(struct qman_portal		*portal,
 }
 
 static enum qman_cb_dqrr_result __hot
-priv_rx_default_dqrr(struct qman_portal		*portal,
-		     struct qman_fq		*fq,
-		     const struct qm_dqrr_entry	*dq)
+priv_rx_default_dqrr(struct qman_portal *portal, struct qman_fq *fq,
+		     const struct qm_dqrr_entry *dq, bool sched_napi,
+		     struct qman_poll_ctx *ctx)
 {
 	struct net_device		*net_dev;
 	struct dpa_priv_s		*priv;
@@ -366,15 +368,15 @@ priv_rx_default_dqrr(struct qman_portal		*portal,
 		dpa_fd_release(net_dev, &dq->fd);
 	else
 		_dpa_rx(net_dev, portal, priv, percpu_priv, &dq->fd, fq->fqid,
-			count_ptr);
+			count_ptr, ctx);
 
 	return qman_cb_dqrr_consume;
 }
 
 static enum qman_cb_dqrr_result
-priv_tx_conf_error_dqrr(struct qman_portal		*portal,
-			struct qman_fq			*fq,
-			const struct qm_dqrr_entry	*dq)
+priv_tx_conf_error_dqrr(struct qman_portal *portal, struct qman_fq *fq,
+		        const struct qm_dqrr_entry *dq, bool sched_napi,
+		        struct qman_poll_ctx *ctx)
 {
 	struct net_device		*net_dev;
 	struct dpa_priv_s		*priv;
@@ -391,9 +393,9 @@ priv_tx_conf_error_dqrr(struct qman_portal		*portal,
 }
 
 static enum qman_cb_dqrr_result __hot
-priv_tx_conf_default_dqrr(struct qman_portal		*portal,
-			  struct qman_fq			*fq,
-			  const struct qm_dqrr_entry	*dq)
+priv_tx_conf_default_dqrr(struct qman_portal *portal, struct qman_fq *fq,
+			  const struct qm_dqrr_entry *dq, bool sched_napi,
+			  struct qman_poll_ctx *ctx)
 {
 	struct net_device		*net_dev;
 	struct dpa_priv_s		*priv;
@@ -497,6 +499,21 @@ static const struct net_device_ops dpa_private_ops = {
 	.ndo_do_ioctl = dpa_ioctl,
 };
 
+static int dpa_private_napi_add(struct net_device *net_dev)
+{
+	struct dpa_priv_s *priv = netdev_priv(net_dev);
+	struct dpa_percpu_priv_s *percpu_priv;
+	int cpu;
+
+	for_each_possible_cpu(cpu) {
+		percpu_priv = per_cpu_ptr(priv->percpu_priv, cpu);
+
+		netif_napi_add(net_dev, &percpu_priv->np.napi, dpaa_eth_poll);
+	}
+
+	return 0;
+}
+
 typedef int (*ec_dpaa_receive_cb)(void *pecdev, const void *data, size_t size);
 typedef int (*ec_dpaa_link_cb)(void *pecdev, uint8_t link);
 typedef int (*ec_dpaa_close_cb)(void *pecdev);
@@ -583,8 +600,14 @@ void ec_dpaa_poll(struct net_device *net_dev)
 {
 	struct dpa_priv_s *priv = netdev_priv(net_dev);
 	u8 link = net_dev->phydev->state;
+	struct dpa_percpu_priv_s *percpu_priv = raw_cpu_ptr(priv->percpu_priv);
+	struct dpa_napi_portal *np;
+	struct napi_struct *napi;
 
-	qman_p_poll_dqrr(priv->p, DPA_NAPI_WEIGHT);
+	np = &percpu_priv->np;
+	napi = &np->napi;
+
+	qman_p_poll_dqrr(priv->p, DPA_NAPI_WEIGHT, napi);
 
 	if (ec_dpaa_link_func)
 		ec_dpaa_link_func(priv->ecdev, link);
@@ -656,7 +679,7 @@ static int dpa_private_netdev_init(struct net_device *net_dev)
 	net_dev->max_mtu = dpa_get_max_mtu();
 
 	net_dev->hw_features |= (NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM |
-		NETIF_F_LLTX);
+		NETIF_F_RXCSUM);
 
 	/* Advertise S/G and HIGHDMA support for private interfaces */
 	net_dev->hw_features |= NETIF_F_SG | NETIF_F_HIGHDMA;
@@ -1092,6 +1115,9 @@ static int dpaa_ethercat_probe(struct platform_device *_of_dev)
 		int *percpu_count = per_cpu_ptr(priv->percpu_count, i);
 		*percpu_count = 0;
 	}
+
+	/* Initialize NAPI, just for qman_p_poll_dqrr api */
+	dpa_private_napi_add(net_dev);
 
 	err = dpa_private_netdev_init(net_dev);
 
