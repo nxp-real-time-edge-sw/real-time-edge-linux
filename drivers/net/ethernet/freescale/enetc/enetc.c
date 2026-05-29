@@ -14,6 +14,8 @@
 #include <net/pkt_sched.h>
 #include <net/tso.h>
 #include <net/xdp_sock_drv.h>
+/* XDP ETF requires direct Completion Ring manipulation not exposed by public XSK API */
+#include <xsk_queue.h>
 
 struct enetc_xsk_cb {
 	int rx_queue;
@@ -44,6 +46,19 @@ struct enetc_xsk_tx_complete {
 	struct enetc_bdr *tx_ring;
 	union enetc_tx_bd *txbd;
 };
+
+struct enetc_xsk_etf_smpcall_arg {
+	struct enetc_xsk_etf_sched *etf;
+	struct enetc_xsk_etf_entry *entry;
+};
+
+/* make sure this value is greater than the sum,
+ * EaTGSLR[MIN_LOOKAHEAD] + PTGSATOR[ADV_TIME_OFFSET] + hrtimer latency
+ */
+#define ENETC_ETF_PRELOAD_TIME_NS		(30 * 1000U)
+
+#define ENETC_ONE_SEC_IN_NS			(1000 * 1000 * 1000L)
+#define ENETC_ETF_RETRY_DELAY_NS		(4000U)
 
 #define ENETC_L4_TYPE_NUM		28
 
@@ -159,7 +174,7 @@ static struct enetc_bdr *enetc_rx_ring_from_xdp_tx_ring(struct enetc_ndev_priv *
 
 static struct sk_buff *enetc_tx_swbd_get_skb(struct enetc_tx_swbd *tx_swbd)
 {
-	if (tx_swbd->is_xdp_tx || tx_swbd->is_xdp_redirect)
+	if (tx_swbd->is_xdp_tx || tx_swbd->is_xdp_redirect || tx_swbd->is_etf)
 		return NULL;
 
 	return tx_swbd->skb;
@@ -1345,6 +1360,53 @@ const struct xsk_tx_metadata_ops enetc_xsk_tx_metadata_ops = {
 };
 EXPORT_SYMBOL_GPL(enetc_xsk_tx_metadata_ops);
 
+static void enetc_xsk_etf_free_entry(struct enetc_xsk_etf_sched *etf,
+				     struct enetc_xsk_etf_entry *entry)
+{
+	if (!etf || !entry)
+		return;
+
+	hrtimer_cancel(&entry->timer);
+
+	entry->next = etf->free_list;
+	etf->free_list = entry;
+}
+
+static void enetc_complete_xsk_etf(struct enetc_ndev_priv *priv,
+				   struct enetc_bdr *tx_ring, int i)
+{
+	struct enetc_xsk_etf_sched *etf = priv->xsk_etf;
+	struct enetc_tx_swbd *tx_swbd;
+	struct enetc_xsk_etf_entry *entry;
+	struct xsk_buff_pool *pool;
+	struct enetc_bdr *rx_ring;
+	unsigned long flags;
+
+	rx_ring = enetc_rx_ring_from_xdp_tx_ring(priv, tx_ring);
+	pool = READ_ONCE(rx_ring->xdp.xsk_pool);
+	if (!pool)
+		return;
+
+	tx_swbd = &tx_ring->tx_swbd[i];
+	entry = READ_ONCE(tx_swbd->etf_entry);
+	tx_swbd->etf_entry = NULL;
+
+	while (entry) {
+		if (xskq_prod_reserve(pool->cq) == 0) {
+			xskq_prod_write_addr(pool->cq, pool->cq->cached_prod - 1, entry->addr);
+			xskq_prod_submit(pool->cq);
+		}
+
+		enetc_xsk_etf_free_entry(etf, entry);
+
+		spin_lock_irqsave(&etf->dropped_list_lock, flags);
+		entry = etf->dropped_list;
+		if (entry)
+			etf->dropped_list = entry->next;
+		spin_unlock_irqrestore(&etf->dropped_list_lock, flags);
+	}
+}
+
 static void enetc_complete_xsk_tx(struct enetc_bdr *tx_ring,
 				  int i, u32 *xsk_tx_cnt)
 {
@@ -1408,6 +1470,10 @@ static bool enetc_clean_tx_ring(struct enetc_bdr *tx_ring, int napi_budget,
 
 		if (tx_swbd->is_xsk && tx_swbd->is_xdp_tx)
 			xsk_buff_free(tx_swbd->xsk_buff);
+		/* Pairs with smp_store_release() in enetc_xsk_etf_setup() */
+		else if (smp_load_acquire(&priv->xdp_etf_enabled) &&
+			 tx_swbd->is_xsk && tx_swbd->is_etf)
+			enetc_complete_xsk_etf(priv, tx_ring, i);
 		else if (tx_swbd->is_xsk)
 			enetc_complete_xsk_tx(tx_ring, i, xsk_tx_cnt);
 		else if (tx_swbd->is_xdp_tx)
@@ -1986,6 +2052,21 @@ dma_map_err:
 	}
 
 	return -ENOMEM;
+}
+
+static bool enetc_tx_queue_trylock(struct enetc_bdr *tx_ring)
+{
+	struct enetc_ndev_priv *priv = netdev_priv(tx_ring->ndev);
+	struct netdev_queue *nq;
+	bool lock = true;
+
+	if (priv->shared_tx_rings) {
+		nq = netdev_get_tx_queue(tx_ring->ndev, tx_ring->index);
+		lock = __netif_tx_trylock(nq);
+		if (lock)
+			txq_trans_cond_update(nq);
+	}
+	return lock;
 }
 
 static void enetc_tx_queue_lock(struct enetc_bdr *tx_ring, int cpu)
@@ -2751,26 +2832,294 @@ static int enetc_clean_rx_ring_xsk(struct enetc_bdr *rx_ring,
 	return rx_frm_cnt;
 }
 
-static void enetc_xsk_descs_to_tx_ring(struct enetc_bdr *tx_ring,
-				       struct xsk_buff_pool *pool,
-				       int batch)
+static enum hrtimer_restart enetc_xsk_etf_timer_cb(struct hrtimer *timer)
 {
-	struct xdp_desc *xsk_descs = pool->tx_descs;
+	struct enetc_xsk_etf_entry *entry =
+		container_of(timer, struct enetc_xsk_etf_entry, timer);
+	struct enetc_xsk_etf_sched *etf = entry->etf;
+	struct enetc_bdr *tx_ring = etf->tx_ring;
+	struct enetc_tx_swbd *tx_swbd;
+	union enetc_tx_bd *txbd;
+	unsigned long flags;
+	ktime_t now;
+	s32 diff;
+	int idx;
+
+	if (!enetc_tx_ring_available(tx_ring, 1))
+		goto try_again;
+
+	if (!enetc_tx_queue_trylock(tx_ring))
+		goto try_again;
+
+	now = etf->get_time();
+	diff = ktime_to_ns(ktime_sub(now, hrtimer_get_softexpires(timer)));
+
+	if (diff < etf->hrtimer_delay_min)
+		etf->hrtimer_delay_min = diff;
+	else if (diff > etf->hrtimer_delay_max)
+		etf->hrtimer_delay_max = diff;
+
+	etf->hrtimer_delay_sum += diff;
+	etf->hrtimer_count++;
+
+	idx = tx_ring->next_to_use;
+	tx_swbd = &tx_ring->tx_swbd[idx];
+
+	txbd = ENETC_TXBD(*tx_ring, idx);
+	prefetchw(txbd);
+
+	tx_swbd->etf_entry = entry;
+	tx_swbd->is_xsk = true;
+	tx_swbd->is_eof = true;
+	tx_swbd->is_etf = true;
+	tx_swbd->dir = DMA_TO_DEVICE;
+	tx_swbd->dma = entry->dma_addr;
+	tx_swbd->len = entry->data_len;
+
+	txbd->addr = cpu_to_le64(tx_swbd->dma);
+	txbd->buf_len = cpu_to_le16(tx_swbd->len);
+	txbd->frm_len = cpu_to_le16(tx_swbd->len);
+
+	txbd->txstart = enetc_txbd_set_tx_start(ktime_to_ns(entry->tx_time),
+						ENETC_TXBD_FLAGS_TSE | ENETC_TXBD_FLAGS_TXSTART |
+						ENETC_TXBD_FLAGS_F);
+
+	enetc_bdr_idx_inc(tx_ring, &idx);
+
+	tx_ring->next_to_use = idx;
+	enetc_update_tx_ring_tail(tx_ring);
+
+	enetc_tx_queue_unlock(tx_ring);
+
+	return HRTIMER_NORESTART;
+
+try_again:
+	if (++entry->retry > 3) {
+		etf->hrtimer_dropped++;
+
+		spin_lock_irqsave(&etf->dropped_list_lock, flags);
+		entry->next = etf->dropped_list;
+		etf->dropped_list = entry;
+		spin_unlock_irqrestore(&etf->dropped_list_lock, flags);
+
+		return HRTIMER_NORESTART;
+	}
+	hrtimer_forward_now(timer, ktime_set(0, ENETC_ETF_RETRY_DELAY_NS));
+	return HRTIMER_RESTART;
+}
+
+static struct enetc_xsk_etf_entry *enetc_xsk_etf_alloc_entry(struct enetc_xsk_etf_sched *etf)
+{
+	struct enetc_xsk_etf_entry *entry;
+
+	if (!etf)
+		return NULL;
+
+	entry = etf->free_list;
+	if (!entry)
+		return NULL;
+
+	etf->free_list = entry->next;
+
+	memset(entry, 0, sizeof(struct enetc_xsk_etf_entry));
+	entry->etf = etf;
+
+	return entry;
+}
+
+int enetc_xsk_etf_setup(struct net_device *ndev,
+			struct tc_etf_qopt_offload *qopt)
+{
+	struct enetc_ndev_priv *priv = netdev_priv(ndev);
+	struct enetc_xsk_etf_sched *etf;
+	int i;
+
+	if (!priv->shared_tx_rings)
+		return -EOPNOTSUPP;
+
+	/* Pairs with smp_store_release() below */
+	if (qopt->enable && smp_load_acquire(&priv->xdp_etf_enabled)) {
+		etf = priv->xsk_etf;
+		netdev_info(ndev, "XDP ETF already enabled on queue %d.\n", etf->queue_id);
+
+	} else if (qopt->enable && !smp_load_acquire(&priv->xdp_etf_enabled)) {
+
+		etf = kcalloc(1, sizeof(struct enetc_xsk_etf_sched), GFP_KERNEL);
+		if (!etf)
+			return -ENOMEM;
+
+		etf->free_list = &etf->entries[0];
+		for (i = 0; i < ENETC_XSK_ETF_ENTRY_COUNT - 1; i++)
+			etf->entries[i].next = &etf->entries[i + 1];
+
+		etf->entries[ENETC_XSK_ETF_ENTRY_COUNT - 1].next = NULL;
+
+		spin_lock_init(&etf->dropped_list_lock);
+		etf->dropped_list = NULL;
+
+		etf->priv = priv;
+		etf->delta_ns = ENETC_ETF_PRELOAD_TIME_NS;
+		etf->clockid = CLOCK_TAI;
+		etf->get_time = ktime_get_clocktai;
+		etf->queue_id = qopt->queue;
+		etf->cpu = qopt->queue % num_online_cpus();
+
+		etf->tx_ring = priv->xdp_tx_ring[qopt->queue];
+
+		etf->xsk_delay_min = INT_MAX;
+		etf->hrtimer_delay_min = INT_MAX;
+
+		priv->xsk_etf = etf;
+
+		/* Pairs with smp_load_acquire() in enetc_clean_tx_ring() */
+		smp_store_release(&priv->xdp_etf_enabled, true);
+
+		netdev_info(ndev, "XDP ETF is enabled on queue %d.\n", qopt->queue);
+
+	/* Pairs with smp_store_release() below */
+	} else if (!qopt->enable && smp_load_acquire(&priv->xdp_etf_enabled)) {
+		etf = priv->xsk_etf;
+		if (qopt->queue != etf->queue_id)
+			return -EINVAL;
+
+		/* Pairs with smp_load_acquire() in enetc_clean_tx_ring() */
+		smp_store_release(&priv->xdp_etf_enabled, false);
+		synchronize_net();
+
+		for (i = 0; i < ENETC_XSK_ETF_ENTRY_COUNT; i++)
+			hrtimer_cancel(&etf->entries[i].timer);
+
+		kfree(etf);
+		priv->xsk_etf = NULL;
+
+		netdev_info(ndev, "XDP ETF is disabled on queue %d.\n", qopt->queue);
+	} else {
+		netdev_info(ndev, "XDP ETF was not enabled.\n");
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(enetc_xsk_etf_setup);
+
+static void enetc_xsk_etf_smpcall(void *info)
+{
+	struct enetc_xsk_etf_smpcall_arg *arg = info;
+	struct enetc_xsk_etf_sched *etf = arg->etf;
+	struct enetc_xsk_etf_entry *entry = arg->entry;
+	ktime_t load_time;
+
+	load_time = ktime_sub_ns(entry->tx_time, etf->delta_ns);
+	hrtimer_start(&entry->timer, load_time, HRTIMER_MODE_ABS_PINNED_HARD);
+}
+
+static void enetc_xsk_etf_do_enqueue(struct enetc_xsk_etf_sched *etf,
+				     struct enetc_xsk_etf_entry *entry)
+{
+	struct enetc_xsk_etf_smpcall_arg info = {
+		.etf = etf,
+		.entry = entry
+	};
+
+	hrtimer_setup(&entry->timer, enetc_xsk_etf_timer_cb,
+		      etf->clockid, HRTIMER_MODE_ABS_PINNED_HARD);
+
+	/* start the hrtimer on the specified CPU */
+	smp_call_function_single(etf->cpu, enetc_xsk_etf_smpcall, &info, 1);
+}
+
+static int enetc_xsk_etf_enqueue(struct enetc_ndev_priv *priv,
+				 struct xsk_buff_pool *pool, struct xdp_desc *desc)
+{
+	struct enetc_xsk_etf_sched *etf = priv->xsk_etf;
+	struct xsk_tx_metadata *meta;
+	struct enetc_xsk_etf_entry *entry;
+	ktime_t tx_time;
+	s64 diff;
+
+	/* Do not support XDP_PKT_CONTD */
+	if (xp_mb_desc(desc))
+		return -EINVAL;
+
+	meta = xsk_buff_get_metadata(pool, desc->addr);
+	if (!meta || !(meta->flags & XDP_TXMD_FLAGS_LAUNCH_TIME))
+		return -EINVAL;
+
+	tx_time = ns_to_ktime(meta->request.launch_time);
+
+	diff = ktime_to_ns(ktime_sub(tx_time, etf->get_time()));
+	if (diff < etf->xsk_delay_min)
+		etf->xsk_delay_min = diff;
+	else if (diff > etf->xsk_delay_max)
+		etf->xsk_delay_max = diff;
+
+	etf->xsk_delay_sum += diff;
+	etf->xsk_count++;
+
+	if (diff < etf->delta_ns || diff > ENETC_ONE_SEC_IN_NS) {
+		/* too late or too early, drop the frame */
+		etf->xsk_dropped++;
+		return -ETIME;
+	}
+
+	entry = enetc_xsk_etf_alloc_entry(etf);
+	if (!entry)
+		return -ENOMEM;
+
+	entry->tx_time = tx_time;
+	entry->data_len = desc->len;
+	entry->addr = desc->addr;
+
+	entry->dma_addr = xsk_buff_raw_get_dma(pool, desc->addr);
+	xsk_buff_raw_dma_sync_for_device(pool, entry->dma_addr, entry->data_len);
+
+	enetc_xsk_etf_do_enqueue(etf, entry);
+
+	return 0;
+}
+
+static int enetc_xsk_descs_to_tx_ring(struct enetc_ndev_priv *priv,
+				      struct enetc_bdr *tx_ring,
+				      struct xsk_buff_pool *pool, int budget)
+{
 	union enetc_tx_bd *txbd, *first_txbd;
 	struct enetc_tx_swbd *tx_swbd;
 	struct xsk_tx_metadata *meta;
+	struct xdp_desc xsk_desc;
 	bool first_bd = true;
 	dma_addr_t dma;
 	u16 frm_len;
-	int i, j;
+	int i;
+	u32 count = 0;
+	int ret;
 
 	i = tx_ring->next_to_use;
-	for (j = 0; j < batch; j++) {
-		dma = xsk_buff_raw_get_dma(pool, xsk_descs[j].addr);
-		xsk_buff_raw_dma_sync_for_device(pool, dma, xsk_descs[j].len);
+
+	while (count < budget) {
+		if (!xsk_tx_peek_desc(pool, &xsk_desc))
+			break;
+
+		/* Pairs with smp_store_release() in enetc_xsk_etf_setup() */
+		if (smp_load_acquire(&priv->xdp_etf_enabled) && first_bd &&
+		    (xsk_desc.options & XDP_TX_METADATA)) {
+			ret = enetc_xsk_etf_enqueue(priv, pool, &xsk_desc);
+			if (ret) {
+				xsk_tx_completed(pool, 1);
+			} else {
+				/* Cancel the entry in the completion ring,
+				 * which was reserved by xsk_tx_peek_desc().
+				 */
+				xskq_prod_cancel_n(pool->cq, 1);
+			}
+
+			count++;
+			continue;
+		}
+
+		dma = xsk_buff_raw_get_dma(pool, xsk_desc.addr);
+		xsk_buff_raw_dma_sync_for_device(pool, dma, xsk_desc.len);
 
 		tx_swbd = &tx_ring->tx_swbd[i];
-		tx_swbd->len = xsk_descs[j].len;
+		tx_swbd->len = xsk_desc.len;
 		tx_swbd->is_xsk = true;
 
 		txbd = ENETC_TXBD(*tx_ring, i);
@@ -2784,7 +3133,7 @@ static void enetc_xsk_descs_to_tx_ring(struct enetc_bdr *tx_ring,
 			first_txbd = txbd;
 			frm_len = tx_swbd->len;
 
-			meta = xsk_buff_get_metadata(pool, xsk_descs[j].addr);
+			meta = xsk_buff_get_metadata(pool, xsk_desc.addr);
 			if (!meta)
 				goto no_metadata_req;
 
@@ -2810,7 +3159,7 @@ static void enetc_xsk_descs_to_tx_ring(struct enetc_bdr *tx_ring,
 		}
 
 no_metadata_req:
-		tx_swbd->is_eof = xsk_is_eop_desc(&xsk_descs[j]);
+		tx_swbd->is_eof = xsk_is_eop_desc(&xsk_desc);
 		if (tx_swbd->is_eof) {
 			first_txbd->frm_len = cpu_to_le16(frm_len);
 			txbd->flags |= ENETC_TXBD_FLAGS_F;
@@ -2818,10 +3167,17 @@ no_metadata_req:
 
 		first_bd = tx_swbd->is_eof;
 		enetc_bdr_idx_inc(tx_ring, &i);
+
+		count++;
 	}
 
-	tx_ring->next_to_use = i;
-	enetc_update_tx_ring_tail(tx_ring);
+	if (count > 0) {
+		tx_ring->next_to_use = i;
+		enetc_update_tx_ring_tail(tx_ring);
+
+		xsk_tx_release(pool);
+	}
+	return count;
 }
 
 static bool enetc_xsk_xmit(struct net_device *ndev, u32 queue,
@@ -2850,13 +3206,7 @@ static bool enetc_xsk_xmit(struct net_device *ndev, u32 queue,
 
 	budget = min_t(int, budget, ENETC_XSK_TX_BUDGET);
 
-	batch = xsk_tx_peek_release_desc_batch(pool, budget);
-	if (!batch) {
-		enetc_tx_queue_unlock(tx_ring);
-		return true;
-	}
-
-	enetc_xsk_descs_to_tx_ring(tx_ring, pool, batch);
+	batch = enetc_xsk_descs_to_tx_ring(priv, tx_ring, pool, budget);
 	enetc_tx_queue_unlock(tx_ring);
 
 	return budget != batch;
@@ -2983,33 +3333,23 @@ static int enetc_poll(struct napi_struct *napi, int budget)
 	struct enetc_int_vector
 		*v = container_of(napi, struct enetc_int_vector, napi);
 	struct enetc_bdr *rx_ring = &v->rx_ring;
-	struct xsk_buff_pool *pool;
-	struct bpf_prog *prog;
+	struct xsk_buff_pool *pool = READ_ONCE(rx_ring->xdp.xsk_pool);
+	struct bpf_prog *prog = READ_ONCE(rx_ring->xdp.prog);
 	bool complete = true;
 	u32 xsk_tx_cnt = 0;
 	int work_done;
 	int i;
 
-	enetc_lock_mdio();
+	if (pool) {
+		if (!enetc_xsk_xmit(rx_ring->ndev, rx_ring->index, pool))
+			complete = false;
+	}
 
+	enetc_lock_mdio();
 	for (i = 0; i < v->count_tx_rings; i++)
 		if (!enetc_clean_tx_ring(&v->tx_ring[i], budget, &xsk_tx_cnt))
 			complete = false;
 	enetc_unlock_mdio();
-
-	/* Handle case where we are called by netpoll with a budget of 0 */
-	if (unlikely(budget <= 0))
-		return budget;
-
-	prog = rx_ring->xdp.prog;
-	pool = rx_ring->xdp.xsk_pool;
-
-	if (pool)
-		work_done = enetc_clean_rx_ring_xsk(rx_ring, napi, budget);
-	else if (prog)
-		work_done = enetc_clean_rx_ring_xdp(rx_ring, napi, budget, prog);
-	else
-		work_done = enetc_clean_rx_ring(rx_ring, napi, budget);
 
 	if (pool) {
 		if (xsk_tx_cnt)
@@ -3017,10 +3357,18 @@ static int enetc_poll(struct napi_struct *napi, int budget)
 
 		if (xsk_uses_need_wakeup(pool))
 			xsk_set_tx_need_wakeup(pool);
-
-		if (!enetc_xsk_xmit(rx_ring->ndev, rx_ring->index, pool))
-			complete = false;
 	}
+
+	/* Handle case where we are called by netpoll with a budget of 0 */
+	if (unlikely(budget <= 0))
+		return budget;
+
+	if (pool)
+		work_done = enetc_clean_rx_ring_xsk(rx_ring, napi, budget);
+	else if (prog)
+		work_done = enetc_clean_rx_ring_xdp(rx_ring, napi, budget, prog);
+	else
+		work_done = enetc_clean_rx_ring(rx_ring, napi, budget);
 
 	if (work_done == budget)
 		complete = false;
@@ -3989,6 +4337,9 @@ int enetc_open(struct net_device *ndev)
 		err = PTR_ERR(rx_res);
 		goto err_alloc_rx;
 	}
+
+	priv->xsk_etf = NULL;
+	smp_store_release(&priv->xdp_etf_enabled, false);
 
 	enetc_tx_onestep_tstamp_init(priv);
 	enetc_assign_tx_resources(priv, tx_res);

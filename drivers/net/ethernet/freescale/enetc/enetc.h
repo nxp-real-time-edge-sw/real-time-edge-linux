@@ -12,8 +12,10 @@
 #include <linux/if_vlan.h>
 #include <linux/phylink.h>
 #include <linux/dim.h>
+#include <net/pkt_sched.h>
 #include <net/xdp.h>
 #include <net/tsn.h>
+#include <net/xdp_sock_drv.h>
 
 #include "enetc_hw.h"
 #include "enetc4_hw.h"
@@ -28,6 +30,48 @@
 #define ENETC_MADDR_HASH_TBL_SZ	64
 #define ENETC_VLAN_HT_SIZE	64
 #define ENETC_INT_NAME_MAX	(IFNAMSIZ + 8)
+
+#define ENETC_XSK_ETF_ENTRY_COUNT	(256U)
+
+struct enetc_xsk_etf_entry {
+	struct enetc_xsk_etf_sched *etf;
+	struct hrtimer timer;
+	u64 addr;
+	ktime_t tx_time;
+	dma_addr_t dma_addr;
+	struct enetc_xsk_etf_entry *next;
+	u32 data_len;
+	u32 retry;
+};
+
+struct enetc_xsk_etf_sched {
+	struct enetc_ndev_priv *priv;
+	s32 delta_ns;
+	int clockid;
+	int queue_id;
+	int cpu;
+	struct enetc_bdr *tx_ring;
+	ktime_t (*get_time)(void);
+
+	struct enetc_xsk_etf_entry *free_list;
+	struct enetc_xsk_etf_entry entries[ENETC_XSK_ETF_ENTRY_COUNT];
+
+	/* protects dropped_list: hrtimer callback push, NAPI pop */
+	spinlock_t dropped_list_lock;
+	struct enetc_xsk_etf_entry *dropped_list;
+
+	s32 hrtimer_delay_min;
+	s32 hrtimer_delay_max;
+	s64 hrtimer_delay_sum;
+	u32 hrtimer_count;
+	u32 hrtimer_dropped;
+
+	s32 xsk_delay_min;
+	s32 xsk_delay_max;
+	s64 xsk_delay_sum;
+	u32 xsk_count;
+	u32 xsk_dropped;
+};
 
 enum enetc_mac_addr_type {UC, MC, MADDR_TYPE};
 
@@ -44,6 +88,7 @@ struct enetc_tx_swbd {
 		struct sk_buff *skb;
 		struct xdp_frame *xdp_frame;
 		struct xdp_buff *xsk_buff;
+		struct enetc_xsk_etf_entry *etf_entry;
 	};
 	dma_addr_t dma;
 	struct page *page;	/* valid only if is_xdp_tx */
@@ -59,6 +104,7 @@ struct enetc_tx_swbd {
 	u8 is_xdp_redirect:1;
 	u8 is_xsk:1;
 	u8 qbv_en:1;
+	u8 is_etf:1;
 };
 
 struct enetc_skb_cb {
@@ -138,6 +184,7 @@ struct enetc_xdp_data {
 
 #define ENETC_RX_RING_DEFAULT_SIZE	2048
 #define ENETC_TX_RING_DEFAULT_SIZE	2048
+
 #define ENETC_DEFAULT_TX_WORK		(ENETC_TX_RING_DEFAULT_SIZE / 2)
 #define ENETC_XSK_TX_BUDGET		256
 
@@ -574,6 +621,9 @@ struct enetc_ndev_priv {
 
 	struct ethtool_keee eee;
 	int page_order;
+
+	struct enetc_xsk_etf_sched *xsk_etf;
+	bool xdp_etf_enabled;
 };
 
 #define ENETC_CBD(R, i)	(&(((struct enetc_cbd *)((R).bd_base))[i]))
@@ -621,6 +671,8 @@ int enetc_xsk_wakeup(struct net_device *ndev, u32 queue, u32 flags);
 ktime_t enetc_get_tstamp(struct net_device *ndev,
 				const struct skb_shared_hwtstamps *hwtstamps,
 				bool cycles);
+int enetc_xsk_etf_setup(struct net_device *ndev,
+			struct tc_etf_qopt_offload *qopt);
 
 int enetc_hwtstamp_get(struct net_device *ndev,
 		       struct kernel_hwtstamp_config *config);

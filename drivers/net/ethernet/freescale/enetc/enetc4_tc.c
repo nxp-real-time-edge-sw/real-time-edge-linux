@@ -369,6 +369,11 @@ static int enetc4_setup_tc_txtime(struct net_device *ndev, void *type_data)
 	if (tc < 0 || tc >= tc_nums)
 		return -EINVAL;
 
+#ifdef CONFIG_XDP_SOCKETS
+	if (enetc_xsk_etf_setup(ndev, qopt))
+		netdev_warn(ndev, "XDP ETF setup failed.\n");
+#endif
+
 	/* Accordiing to the NETC block guide, all traffic on the traffic class
 	 * should use time specific departure operation.
 	 */
