@@ -1,0 +1,79 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * Copyright 2026 NXP
+ */
+
+/dts-v1/;
+#include "imx943-evk-multicore-rtos.dts"
+#include "imx943-generic-mbox.dtsi"
+#include "imx943-generic-mbox-1.dtsi"
+
+/ {
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		vdev0vring0_ca55_2: vdev0vring0@c0100000 {
+			reg = <0 0xc0100000 0 0x8000>;
+			no-map;
+		};
+
+		vdev0vring1_ca55_2: vdev0vring1@c0108000 {
+			reg = <0 0xc0108000 0 0x8000>;
+			no-map;
+		};
+
+		rsc_table_ca55_2: rsc-table@c01f0000 {
+			reg = <0 0xc01f0000 0 0x1000>;
+			no-map;
+		};
+
+		vdev0buffer_ca55_2: vdev0buffer@c0200000 {
+			compatible = "shared-dma-pool";
+			reg = <0 0xc0200000 0 0x100000>;
+			no-map;
+		};
+
+		vdev0vring0_ca55_3: vdev0vring0@c0110000 {
+			reg = <0 0xc0110000 0 0x8000>;
+			no-map;
+		};
+
+		vdev0vring1_ca55_3: vdev0vring1@c0118000 {
+			reg = <0 0xc0118000 0 0x8000>;
+			no-map;
+		};
+
+		rsc_table_ca55_3: rsc-table@c01f1000 {
+			reg = <0 0xc01f1000 0 0x1000>;
+			no-map;
+		};
+
+		vdev0buffer_ca55_3: vdev0buffer@c0300000 {
+			compatible = "shared-dma-pool";
+			reg = <0 0xc0300000 0 0x100000>;
+			no-map;
+		};
+	};
+};
+
+&ca55_2 {
+	memory-region = <&vdev0buffer_ca55_2>, <&vdev0vring0_ca55_2>, <&vdev0vring1_ca55_2>, <&rsc_table_ca55_2>, <&rtos_ca55_reserved>;
+	dma-coherent;
+	mbox-names = "tx", "rx", "rxdb";
+	mboxes = <&gen_sw_mbox 0 0 1	/* Tx channel with ACK */
+		  &gen_sw_mbox 1 0 0	/* Rx channel without ACK */
+		  &gen_sw_mbox 2 0 1>;	/* RXDB channel with ACK */
+	fsl,startup-delay-ms = <50>;
+};
+
+&ca55_3 {
+	memory-region = <&vdev0buffer_ca55_3>, <&vdev0vring0_ca55_3>, <&vdev0vring1_ca55_3>, <&rsc_table_ca55_3>, <&rtos_ca55_reserved>;
+	dma-coherent;
+	mbox-names = "tx", "rx", "rxdb";
+	mboxes = <&gen_sw_mbox_1 0 0 1		/* Tx channel with ACK */
+		  &gen_sw_mbox_1 1 0 0		/* Rx channel without ACK */
+		  &gen_sw_mbox_1 2 0 1>;	/* RXDB channel with ACK */
+	fsl,startup-delay-ms = <50>;
+};
