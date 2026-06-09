@@ -2969,6 +2969,11 @@ int enetc_xsk_etf_setup(struct net_device *ndev,
 		etf->xsk_delay_min = INT_MAX;
 		etf->hrtimer_delay_min = INT_MAX;
 
+		for (i = 0; i < ENETC_XSK_ETF_ENTRY_COUNT; i++)
+			hrtimer_setup(&etf->entries[i].timer,
+				      enetc_xsk_etf_timer_cb,
+				      etf->clockid, HRTIMER_MODE_ABS_PINNED_HARD);
+
 		priv->xsk_etf = etf;
 
 		/* Pairs with smp_load_acquire() in enetc_clean_tx_ring() */
