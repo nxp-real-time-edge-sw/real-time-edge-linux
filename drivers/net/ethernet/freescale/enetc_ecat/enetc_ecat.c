@@ -1616,6 +1616,7 @@ int enetc4_ecat_fast_recv(struct net_device *ndev, void __user *buff, size_t len
 	int rx_frm_cnt = 0, rx_byte_cnt = 0;
 	int cleaned_cnt, i;
 	__u8 *data;
+	struct sk_buff *skb = NULL;
 
 	if (!mutex_trylock(&priv->fast_ndev_lock))
 		return -EBUSY;
@@ -1625,8 +1626,9 @@ int enetc4_ecat_fast_recv(struct net_device *ndev, void __user *buff, size_t len
 	i = rx_ring->next_to_clean;
 
 	union enetc_rx_bd *rxbd;
-	struct sk_buff *skb;
 	u32 bd_status;
+	size_t frame_len;
+	size_t copy_len;
 
 	enetc_lock_mdio();
 	if (cleaned_cnt >= ENETC_RXBD_BUNDLE) {
@@ -1636,7 +1638,6 @@ int enetc4_ecat_fast_recv(struct net_device *ndev, void __user *buff, size_t len
 	rxbd = enetc_rxbd(rx_ring, i);
 	bd_status = le32_to_cpu(rxbd->r.lstatus);
 	if (!bd_status) {
-		enetc_unlock_mdio();
 		goto out;
 	}
 
@@ -1650,10 +1651,12 @@ int enetc4_ecat_fast_recv(struct net_device *ndev, void __user *buff, size_t len
 
 	prefetch(skb->data - NET_IP_ALIGN);
 	data = skb->data - 14;
-	rx_byte_cnt += skb->len + ETH_HLEN;
+	frame_len = skb->len + ETH_HLEN;
+	rx_byte_cnt += frame_len;
 	if (data[12] == 0x88 && data[13] == 0xa4) {
 		/* copy skb data to user buff, send data to codesys */
-		if (copy_to_user(buff, data, len))
+		copy_len = min_t(size_t, len, frame_len);
+		if (copy_to_user(buff, data, copy_len))
 			goto out;
 
 		if (addr != NULL) {
@@ -1661,14 +1664,14 @@ int enetc4_ecat_fast_recv(struct net_device *ndev, void __user *buff, size_t len
 			sll->sll_hatype = ndev->type;
 			sll->sll_ifindex = ndev->ifindex;
 		}
-		recv_len = len;
+		recv_len = copy_len;
 	}
 
 	rx_frm_cnt++;
 
 out:
-
-	dev_kfree_skb(skb);
+	if (skb)
+		dev_kfree_skb(skb);
 	enetc_unlock_mdio();
 	rx_ring->next_to_clean = i;
 
