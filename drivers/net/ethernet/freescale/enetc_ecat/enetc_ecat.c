@@ -1524,13 +1524,15 @@ static int enetc_ecat_map_tx_buffs(struct enetc_bdr *tx_ring, void __user *buff,
 	tx_swbd = &tx_ring->tx_swbd[i];
 	skb = enetc_tx_swbd_get_skb(tx_swbd);
 	if (!skb)
-		return NETDEV_TX_OK;
+		return -ENOBUFS;
 
 	int len = buff_len;
+	if (unlikely(!len || len > skb_tailroom(skb)))
+		return -EMSGSIZE;
 
 	/* copy skb from user buff, send data to servo*/
 	if (copy_from_user(skb->data, buff, buff_len)) {
-		return count;
+		return -EFAULT;
 	}
 	/* Push the data cache so the CPM does not get stale memory data. */
 	dma_sync_single_for_device(tx_ring->dev, tx_swbd->dma,
@@ -1579,13 +1581,13 @@ static int enetc4_ecat_start_xmit(void __user *buff, size_t len, struct net_devi
 	count = enetc_ecat_map_tx_buffs(tx_ring, buff, len);
 	enetc_unlock_mdio();
 
+	if (unlikely(count < 0))
+		return count;
+
 	if (unlikely(!count))
-		goto drop_packet_err;
+		return -ENOBUFS;
 
-	return NETDEV_TX_OK;
-
-drop_packet_err:
-	return NETDEV_TX_OK;
+	return len;
 }
 
 int enetc4_ecat_fast_xmit(struct net_device *ndev, void __user *buff, size_t len)
@@ -1601,7 +1603,7 @@ int enetc4_ecat_fast_xmit(struct net_device *ndev, void __user *buff, size_t len
 	ret = enetc4_ecat_start_xmit(buff, len, ndev);
 
 	mutex_unlock(&priv->fast_ndev_lock);
-	return NETDEV_TX_OK;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(enetc4_ecat_fast_xmit);
 
