@@ -1610,7 +1610,7 @@ EXPORT_SYMBOL_GPL(enetc4_ecat_fast_xmit);
 #define ENETC_RXBD_BUNDLE 16 /* # of BDs to update at once */
 
 int enetc4_ecat_fast_recv(struct net_device *ndev, void __user *buff, size_t len,
-			  struct sockaddr __user *addr,  int *addr_len)
+			  struct sockaddr __user *addr,  int __user *addr_len)
 {
 	struct enetc_ndev_priv *priv = netdev_priv(ndev);
 	struct enetc_bdr *rx_ring = priv->rx_ring[0];
