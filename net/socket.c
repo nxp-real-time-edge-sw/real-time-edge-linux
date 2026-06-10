@@ -113,9 +113,32 @@
 
 #include "core/dev.h"
 
-static int fast_raw_socket_fd = -ESOCKTNOSUPPORT;
-static struct net_device *fast_raw_socket_dev;
 static struct socket *fast_raw_socket_sock = NULL;
+static DEFINE_MUTEX(fast_raw_socket_lock);
+
+static struct net_device *fast_raw_socket_dev_get(struct socket *sock, bool tx)
+{
+	struct net_device *dev;
+	const struct net_device_ops *ops;
+
+	if (sock != READ_ONCE(fast_raw_socket_sock))
+		return NULL;
+
+	dev = READ_ONCE(sock->ndev);
+	if (!dev || !READ_ONCE(dev->fast_raw_device))
+		return NULL;
+
+	ops = dev->netdev_ops;
+	if (!ops)
+		return NULL;
+
+	if (tx && !ops->ndo_fast_xmit)
+		return NULL;
+	if (!tx && !ops->ndo_fast_recv)
+		return NULL;
+
+	return dev;
+}
 
 #ifdef CONFIG_NET_RX_BUSY_POLL
 unsigned int sysctl_net_busy_read __read_mostly;
@@ -679,10 +702,12 @@ static void __sock_release(struct socket *sock, struct inode *inode)
 		iput(SOCK_INODE(sock));
 		return;
 	}
-	if (fast_raw_socket_sock != NULL && fast_raw_socket_sock == sock) {
-		fast_raw_socket_sock = NULL;
-		fast_raw_socket_fd = -ESOCKTNOSUPPORT;
-	}
+
+	mutex_lock(&fast_raw_socket_lock);
+	if (READ_ONCE(fast_raw_socket_sock) == sock)
+		WRITE_ONCE(fast_raw_socket_sock, NULL);
+	mutex_unlock(&fast_raw_socket_lock);
+
 	WRITE_ONCE(sock->file, NULL);
 }
 
@@ -1918,12 +1943,13 @@ int __sys_bind(int fd, struct sockaddr __user *umyaddr, int addrlen)
 
 	err = __sys_bind_socket(sock, &address, addrlen);
 
-	if (fast_raw_socket_fd < 0) {
+	if (!err && sock->sk) {
 		if (sock->type == SOCK_RAW && sock->sk->sk_family == PF_PACKET) {
 			if (sock->ndev != NULL && sock->ndev->fast_raw_device == 1) {
-				fast_raw_socket_fd = fd;
-				fast_raw_socket_dev = sock->ndev;
-				fast_raw_socket_sock = sock;
+				mutex_lock(&fast_raw_socket_lock);
+				if (!READ_ONCE(fast_raw_socket_sock))
+					WRITE_ONCE(fast_raw_socket_sock, sock);
+				mutex_unlock(&fast_raw_socket_lock);
 			}
 		}
 	}
@@ -2237,13 +2263,9 @@ int __sys_sendto(int fd, void __user *buff, size_t len, unsigned int flags,
 {
 	struct socket *sock;
 	struct sockaddr_storage address;
+	struct net_device *fast_dev;
 	int err;
 	struct msghdr msg;
-
-	if (fd == fast_raw_socket_fd && fd > 0) {
-		err = fast_raw_socket_dev->netdev_ops->ndo_fast_xmit(fast_raw_socket_dev, buff, len);
-		return err;
-	}
 
 	err = import_ubuf(ITER_SOURCE, buff, len, &msg.msg_iter);
 	if (unlikely(err))
@@ -2255,6 +2277,10 @@ int __sys_sendto(int fd, void __user *buff, size_t len, unsigned int flags,
 	sock = sock_from_file(fd_file(f));
 	if (unlikely(!sock))
 		return -ENOTSOCK;
+
+	fast_dev = fast_raw_socket_dev_get(sock, true);
+	if (fast_dev)
+		return fast_dev->netdev_ops->ndo_fast_xmit(fast_dev, buff, len);
 
 	msg.msg_name = NULL;
 	msg.msg_control = NULL;
@@ -2307,12 +2333,8 @@ int __sys_recvfrom(int fd, void __user *ubuf, size_t size, unsigned int flags,
 		.msg_name = addr ? (struct sockaddr *)&address : NULL,
 	};
 	struct socket *sock;
+	struct net_device *fast_dev;
 	int err, err2;
-
-	if (fd == fast_raw_socket_fd && fd > 0) {
-		err = fast_raw_socket_dev->netdev_ops->ndo_fast_recv(fast_raw_socket_dev, ubuf, size, addr, addr_len);
-		return err;
-	}
 
 	err = import_ubuf(ITER_DEST, ubuf, size, &msg.msg_iter);
 	if (unlikely(err))
@@ -2325,6 +2347,11 @@ int __sys_recvfrom(int fd, void __user *ubuf, size_t size, unsigned int flags,
 	sock = sock_from_file(fd_file(f));
 	if (unlikely(!sock))
 		return -ENOTSOCK;
+
+	fast_dev = fast_raw_socket_dev_get(sock, false);
+	if (fast_dev)
+		return fast_dev->netdev_ops->ndo_fast_recv(fast_dev, ubuf, size,
+							   addr, addr_len);
 
 	if (sock->file->f_flags & O_NONBLOCK)
 		flags |= MSG_DONTWAIT;
