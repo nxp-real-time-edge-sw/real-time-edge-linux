@@ -323,8 +323,8 @@ static int enetc_etf_show(struct seq_file *s, void *data)
 	struct enetc_si *si = s->private;
 	struct enetc_ndev_priv *priv;
 	struct enetc_xsk_etf_sched *etf;
-	u32 xsk_count;
-	u32 hrtimer_count;
+	u64 xsk_count;
+	u64 hrtimer_count;
 
 	priv = netdev_priv(si->ndev);
 	etf = priv->xsk_etf;
@@ -332,19 +332,20 @@ static int enetc_etf_show(struct seq_file *s, void *data)
 		return -ENODEV;
 
 	xsk_count = READ_ONCE(etf->xsk_count);
-	seq_printf(s, "AF_XDP socket:\n    total packets: %u    dropped packets: %u\n",
+	hrtimer_count = READ_ONCE(etf->hrtimer_count);
+
+	seq_printf(s, "AF_XDP socket:\n    TX packets: %llu    dropped packets: %u\n",
 		   xsk_count, READ_ONCE(etf->xsk_dropped));
 
 	seq_printf(s, "    delay:    min: %d    avg: %d    max: %d\n\n",
-		   etf->xsk_delay_min,
+		   etf->xsk_delay_min != INT_MAX ? etf->xsk_delay_min : 0,
 		   xsk_count ? (int)div_s64(etf->xsk_delay_sum, xsk_count) : 0,
 		   etf->xsk_delay_max);
 
-	hrtimer_count = READ_ONCE(etf->hrtimer_count);
-	seq_printf(s, "hrtimer callback:\n    dropped: %u\n",
-		   etf->hrtimer_dropped);
+	seq_printf(s, "hrtimer callback:\n    TX packets: %llu    dropped packets: %u\n",
+		   hrtimer_count, etf->hrtimer_dropped);
 	seq_printf(s, "    delay:    min: %d    avg: %d    max: %d\n\n",
-		   etf->hrtimer_delay_min,
+		   etf->hrtimer_delay_min != INT_MAX ? etf->hrtimer_delay_min : 0,
 		   hrtimer_count ? (int)div_s64(etf->hrtimer_delay_sum, hrtimer_count) : 0,
 		   etf->hrtimer_delay_max);
 

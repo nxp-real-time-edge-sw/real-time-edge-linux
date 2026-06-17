@@ -52,6 +52,8 @@ struct enetc_xsk_etf_smpcall_arg {
 	struct enetc_xsk_etf_entry *entry;
 };
 
+#define ENETC_XSK_ETF_ERROR		(-1)
+
 /* make sure this value is greater than the sum,
  * EaTGSLR[MIN_LOOKAHEAD] + PTGSATOR[ADV_TIME_OFFSET] + hrtimer latency
  */
@@ -219,7 +221,9 @@ static void enetc_free_tx_frame(struct enetc_bdr *tx_ring,
 	if (!tx_swbd->is_xsk && tx_swbd->dma)
 		enetc_unmap_tx_buff(tx_ring, tx_swbd);
 
-	if (xdp_frame) {
+	if (tx_swbd->is_etf) {
+		tx_swbd->etf_entry = NULL;
+	} else if (xdp_frame) {
 		xdp_return_frame(tx_swbd->xdp_frame);
 		tx_swbd->xdp_frame = NULL;
 	} else if (skb) {
@@ -2927,11 +2931,69 @@ static struct enetc_xsk_etf_entry *enetc_xsk_etf_alloc_entry(struct enetc_xsk_et
 	return entry;
 }
 
+static void enetc_xsk_etf_quiesce(struct enetc_ndev_priv *priv)
+{
+	struct enetc_xsk_etf_sched *etf = priv->xsk_etf;
+	int i;
+
+	/* Pairs with smp_store_release() in enetc_xsk_etf_setup() */
+	if (!smp_load_acquire(&priv->xdp_etf_enabled))
+		return;
+
+	/* Cancel all in-flight hrtimers. ENETC_TX_DOWN is already set,
+	 * so no new enqueues can happen.
+	 */
+	for (i = 0; i < ENETC_XSK_ETF_ENTRY_COUNT; i++)
+		hrtimer_cancel(&etf->entries[i].timer);
+}
+
+static void enetc_xsk_etf_resume(struct enetc_ndev_priv *priv)
+{
+	struct enetc_xsk_etf_sched *etf = priv->xsk_etf;
+	int i;
+
+	/* Pairs with smp_store_release() in enetc_xsk_etf_setup() */
+	if (!smp_load_acquire(&priv->xdp_etf_enabled))
+		return;
+
+	/* Rebuild free list from all entries (nuclear reset) */
+	etf->free_list = &etf->entries[0];
+	for (i = 0; i < ENETC_XSK_ETF_ENTRY_COUNT - 1; i++)
+		etf->entries[i].next = &etf->entries[i + 1];
+	etf->entries[ENETC_XSK_ETF_ENTRY_COUNT - 1].next = NULL;
+
+	/* Clear dropped list */
+	etf->dropped_list = NULL;
+
+	/* Re-bind tx_ring — may have been reallocated by enetc_reconfigure */
+	etf->tx_ring = priv->xdp_tx_ring[etf->queue_id];
+
+	/* Reset statistics */
+	etf->hrtimer_delay_min = INT_MAX;
+	etf->hrtimer_delay_max = 0;
+	etf->hrtimer_delay_sum = 0;
+	etf->hrtimer_count = 0;
+	etf->hrtimer_dropped = 0;
+	etf->xsk_delay_min = INT_MAX;
+	etf->xsk_delay_max = 0;
+	etf->xsk_delay_sum = 0;
+	etf->xsk_count = 0;
+	etf->xsk_dropped = 0;
+
+	/* Re-initialize hrtimers */
+	for (i = 0; i < ENETC_XSK_ETF_ENTRY_COUNT; i++)
+		hrtimer_setup(&etf->entries[i].timer,
+			      enetc_xsk_etf_timer_cb,
+			      etf->clockid, HRTIMER_MODE_ABS_PINNED_HARD);
+}
+
 int enetc_xsk_etf_setup(struct net_device *ndev,
 			struct tc_etf_qopt_offload *qopt)
 {
 	struct enetc_ndev_priv *priv = netdev_priv(ndev);
 	struct enetc_xsk_etf_sched *etf;
+	struct xsk_buff_pool *pool;
+	struct enetc_bdr *rx_ring;
 	int i;
 
 	if (!priv->shared_tx_rings)
@@ -2987,6 +3049,15 @@ int enetc_xsk_etf_setup(struct net_device *ndev,
 		if (qopt->queue != etf->queue_id)
 			return -EINVAL;
 
+		rx_ring = enetc_rx_ring_from_xdp_tx_ring(priv, etf->tx_ring);
+		pool = READ_ONCE(rx_ring->xdp.xsk_pool);
+		if (pool) {
+			netdev_info(ndev,
+				    "Cannot disable XDP ETF while XSK pool is active on queue %d\n",
+				    etf->queue_id);
+			return -EBUSY;
+		}
+
 		/* Pairs with smp_load_acquire() in enetc_clean_tx_ring() */
 		smp_store_release(&priv->xdp_etf_enabled, false);
 		synchronize_net();
@@ -3014,7 +3085,8 @@ static void enetc_xsk_etf_smpcall(void *info)
 	ktime_t load_time;
 
 	load_time = ktime_sub_ns(entry->tx_time, etf->delta_ns);
-	hrtimer_start(&entry->timer, load_time, HRTIMER_MODE_ABS_PINNED_HARD);
+	hrtimer_start_range_ns(&entry->timer, load_time, etf->delta_ns,
+			       HRTIMER_MODE_ABS_PINNED_HARD);
 }
 
 static void enetc_xsk_etf_do_enqueue(struct enetc_xsk_etf_sched *etf,
@@ -3033,25 +3105,27 @@ static void enetc_xsk_etf_do_enqueue(struct enetc_xsk_etf_sched *etf,
 }
 
 static int enetc_xsk_etf_enqueue(struct enetc_ndev_priv *priv,
-				 struct xsk_buff_pool *pool, struct xdp_desc *desc)
+				 struct xsk_buff_pool *pool,
+				 struct xdp_desc *desc,
+				 ktime_t tx_time)
 {
 	struct enetc_xsk_etf_sched *etf = priv->xsk_etf;
-	struct xsk_tx_metadata *meta;
 	struct enetc_xsk_etf_entry *entry;
-	ktime_t tx_time;
 	s64 diff;
 
-	/* Do not support XDP_PKT_CONTD */
-	if (xp_mb_desc(desc))
-		return -EINVAL;
-
-	meta = xsk_buff_get_metadata(pool, desc->addr);
-	if (!meta || !(meta->flags & XDP_TXMD_FLAGS_LAUNCH_TIME))
-		return -EINVAL;
-
-	tx_time = ns_to_ktime(meta->request.launch_time);
-
 	diff = ktime_to_ns(ktime_sub(tx_time, etf->get_time()));
+	if (diff < etf->delta_ns || diff > ENETC_ONE_SEC_IN_NS) {
+		/* too late or too early, drop the frame */
+		etf->xsk_dropped++;
+		return ENETC_XSK_ETF_ERROR;
+	}
+
+	entry = enetc_xsk_etf_alloc_entry(etf);
+	if (!entry) {
+		etf->xsk_dropped++;
+		return ENETC_XSK_ETF_ERROR;
+	}
+
 	if (diff < etf->xsk_delay_min)
 		etf->xsk_delay_min = diff;
 	else if (diff > etf->xsk_delay_max)
@@ -3060,22 +3134,14 @@ static int enetc_xsk_etf_enqueue(struct enetc_ndev_priv *priv,
 	etf->xsk_delay_sum += diff;
 	etf->xsk_count++;
 
-	if (diff < etf->delta_ns || diff > ENETC_ONE_SEC_IN_NS) {
-		/* too late or too early, drop the frame */
-		etf->xsk_dropped++;
-		return -ETIME;
-	}
-
-	entry = enetc_xsk_etf_alloc_entry(etf);
-	if (!entry)
-		return -ENOMEM;
-
 	entry->tx_time = tx_time;
 	entry->data_len = desc->len;
 	entry->addr = desc->addr;
 
 	entry->dma_addr = xsk_buff_raw_get_dma(pool, desc->addr);
-	xsk_buff_raw_dma_sync_for_device(pool, entry->dma_addr, entry->data_len);
+
+	xsk_buff_raw_dma_sync_for_device(pool, entry->dma_addr,
+					 entry->data_len);
 
 	enetc_xsk_etf_do_enqueue(etf, entry);
 
@@ -3086,102 +3152,152 @@ static int enetc_xsk_descs_to_tx_ring(struct enetc_ndev_priv *priv,
 				      struct enetc_bdr *tx_ring,
 				      struct xsk_buff_pool *pool, int budget)
 {
+	struct xdp_desc frm_descs[MAX_SKB_FRAGS];
 	union enetc_tx_bd *txbd, *first_txbd;
 	struct enetc_tx_swbd *tx_swbd;
 	struct xsk_tx_metadata *meta;
-	struct xdp_desc xsk_desc;
-	bool first_bd = true;
+	int nr_frm_descs, needed_bds;
 	dma_addr_t dma;
-	u16 frm_len;
-	int i;
+	int cpu;
 	u32 count = 0;
+	u16 frm_len;
 	int ret;
-
-	i = tx_ring->next_to_use;
+	int i, j;
 
 	while (count < budget) {
-		if (!xsk_tx_peek_desc(pool, &xsk_desc))
-			break;
-
-		/* Pairs with smp_store_release() in enetc_xsk_etf_setup() */
-		if (smp_load_acquire(&priv->xdp_etf_enabled) && first_bd &&
-		    (xsk_desc.options & XDP_TX_METADATA)) {
-			ret = enetc_xsk_etf_enqueue(priv, pool, &xsk_desc);
-			if (ret) {
-				xsk_tx_completed(pool, 1);
-			} else {
-				/* Cancel the entry in the completion ring,
-				 * which was reserved by xsk_tx_peek_desc().
+next_frame:
+		/* Gather all descriptors for one complete frame.
+		 * Peek descriptors until we see the end-of-frame marker.
+		 * This tells us exactly how many TX BDs the frame needs
+		 * before we touch the TX ring.
+		 */
+		meta = NULL;
+		nr_frm_descs = 0;
+		do {
+			if (nr_frm_descs >= MAX_SKB_FRAGS) {
+				/* Too many fragments without EOP — drain
+				 * remaining fragments of this oversized
+				 * frame to avoid corrupting the next one,
+				 * then drop the entire frame.
 				 */
-				xskq_prod_cancel_n(pool->cq, 1);
+				struct xdp_desc dummy;
+
+				while (xsk_tx_peek_desc(pool, &dummy)) {
+					nr_frm_descs++;
+					if (xsk_is_eop_desc(&dummy))
+						break;
+				}
+				xsk_tx_completed(pool, nr_frm_descs);
+				count += nr_frm_descs;
+				goto next_frame;
 			}
 
+			if (!xsk_tx_peek_desc(pool, &frm_descs[nr_frm_descs])) {
+				xsk_tx_completed(pool, nr_frm_descs);
+				goto out;
+			}
+
+			nr_frm_descs++;
+		} while (!xsk_is_eop_desc(&frm_descs[nr_frm_descs - 1]));
+
+		if (frm_descs[0].options & XDP_TX_METADATA)
+			meta = xsk_buff_get_metadata(pool, frm_descs[0].addr);
+
+		/* ETF does not support multi-buffer.
+		 * Pairs with smp_store_release() in enetc_xsk_etf_setup().
+		 */
+		if (meta && smp_load_acquire(&priv->xdp_etf_enabled) &&
+		    (meta->flags & XDP_TXMD_FLAGS_LAUNCH_TIME) &&
+		    nr_frm_descs == 1) {
+			ret = enetc_xsk_etf_enqueue(priv, pool,
+						    &frm_descs[0],
+						    ns_to_ktime(meta->request.launch_time));
+			if (!ret) {
+				/* Cancel the CQ entry reserved by
+				 * xsk_tx_peek_desc(); completion will
+				 * happen when ETF actually transmits.
+				 */
+				xskq_prod_cancel_n(pool->cq, 1);
+			} else {
+				xsk_tx_completed(pool, 1);
+			}
 			count++;
 			continue;
 		}
 
-		dma = xsk_buff_raw_get_dma(pool, xsk_desc.addr);
-		xsk_buff_raw_dma_sync_for_device(pool, dma, xsk_desc.len);
+		/* Account for a possible extension BD when TX metadata is enabled. */
+		needed_bds = meta ? nr_frm_descs + 1 : nr_frm_descs;
 
-		tx_swbd = &tx_ring->tx_swbd[i];
-		tx_swbd->len = xsk_desc.len;
-		tx_swbd->is_xsk = true;
+		cpu = smp_processor_id();
+		enetc_tx_queue_lock(tx_ring, cpu);
 
-		txbd = ENETC_TXBD(*tx_ring, i);
-		prefetchw(txbd);
-		enetc_clear_tx_bd(txbd);
-		txbd->addr = cpu_to_le64(dma);
-		txbd->buf_len = cpu_to_le16(tx_swbd->len);
-		if (first_bd) {
-			struct enetc_metadata_req meta_req;
+		if (enetc_bd_unused(tx_ring) < needed_bds) {
+			enetc_tx_queue_unlock(tx_ring);
+			xsk_tx_completed(pool, nr_frm_descs);
+			goto out;
+		}
 
-			first_txbd = txbd;
-			frm_len = tx_swbd->len;
+		i = tx_ring->next_to_use;
+		frm_len = 0;
 
-			meta = xsk_buff_get_metadata(pool, xsk_desc.addr);
-			if (!meta)
-				goto no_metadata_req;
+		for (j = 0; j < nr_frm_descs; j++) {
+			dma = xsk_buff_raw_get_dma(pool, frm_descs[j].addr);
+			xsk_buff_raw_dma_sync_for_device(pool, dma,
+							 frm_descs[j].len);
 
-			meta_req.tx_ring = tx_ring;
-			meta_req.txbd = txbd;
-			meta_req.index = &i;
-			meta_req.txbd_update = false;
-
-			xsk_tx_metadata_request(meta, &enetc_xsk_tx_metadata_ops,
-						&meta_req);
-			xsk_tx_metadata_to_compl(meta, &tx_swbd->xsk_meta);
-
-			/* Update txbd and tx_swbd, because i may have been
-			 * incremented by 1 in xsk_tx_metadata_request().
-			 */
-			if (meta_req.txbd_update) {
-				tx_swbd = &tx_ring->tx_swbd[i];
-				txbd = ENETC_TXBD(*tx_ring, i);
-				prefetchw(txbd);
-			}
-		} else {
+			tx_swbd = &tx_ring->tx_swbd[i];
+			tx_swbd->len = frm_descs[j].len;
+			tx_swbd->is_xsk = true;
 			frm_len += tx_swbd->len;
+
+			txbd = ENETC_TXBD(*tx_ring, i);
+			prefetchw(txbd);
+			enetc_clear_tx_bd(txbd);
+			txbd->addr = cpu_to_le64(dma);
+			txbd->buf_len = cpu_to_le16(tx_swbd->len);
+
+			if (j == 0)
+				first_txbd = txbd;
+
+			if (meta && j == 0) {
+				struct enetc_metadata_req meta_req;
+
+				meta_req.tx_ring = tx_ring;
+				meta_req.txbd = txbd;
+				meta_req.index = &i;
+				meta_req.txbd_update = false;
+
+				xsk_tx_metadata_request(meta,
+							&enetc_xsk_tx_metadata_ops,
+							&meta_req);
+				xsk_tx_metadata_to_compl(meta,
+							 &tx_swbd->xsk_meta);
+
+				/* Update txbd and tx_swbd, because i may
+				 * have been incremented by 1 in xsk_tx_metadata_request().
+				 */
+				if (meta_req.txbd_update) {
+					tx_swbd = &tx_ring->tx_swbd[i];
+					txbd = ENETC_TXBD(*tx_ring, i);
+					prefetchw(txbd);
+				}
+			}
+
+			enetc_bdr_idx_inc(tx_ring, &i);
 		}
 
-no_metadata_req:
-		tx_swbd->is_eof = xsk_is_eop_desc(&xsk_desc);
-		if (tx_swbd->is_eof) {
-			first_txbd->frm_len = cpu_to_le16(frm_len);
-			txbd->flags |= ENETC_TXBD_FLAGS_F;
-		}
+		tx_swbd->is_eof = true;
+		first_txbd->frm_len = cpu_to_le16(frm_len);
+		txbd->flags |= ENETC_TXBD_FLAGS_F;
 
-		first_bd = tx_swbd->is_eof;
-		enetc_bdr_idx_inc(tx_ring, &i);
-
-		count++;
-	}
-
-	if (count > 0) {
 		tx_ring->next_to_use = i;
 		enetc_update_tx_ring_tail(tx_ring);
-
-		xsk_tx_release(pool);
+		enetc_tx_queue_unlock(tx_ring);
+		count += nr_frm_descs;
 	}
+
+out:
+	xsk_tx_release(pool);
 	return count;
 }
 
@@ -3189,32 +3305,18 @@ static bool enetc_xsk_xmit(struct net_device *ndev, u32 queue,
 			   struct xsk_buff_pool *pool)
 {
 	struct enetc_ndev_priv *priv = netdev_priv(ndev);
-	int cpu = smp_processor_id();
 	struct enetc_bdr *tx_ring;
-	int budget, batch;
+	int batch;
 
 	if (unlikely(test_bit(ENETC_TX_DOWN, &priv->flags)))
 		return true;
 
 	tx_ring = priv->xdp_tx_ring[queue];
-	enetc_tx_queue_lock(tx_ring, cpu);
 
-	/* XDP_TXMD_FLAGS_TIMESTAMP maybe set if Tx metadata is enabled,
-	 * if so, extended Tx BD must be enabled to support Tx timestamp.
-	 * To ensure that there are enough available Tx BDs, it is assumed
-	 * that the extended BD is used for each frame.
-	 */
-	if (xp_tx_metadata_enabled(pool))
-		budget = enetc_bd_unused(tx_ring) / 2;
-	else
-		budget = enetc_bd_unused(tx_ring);
+	batch = enetc_xsk_descs_to_tx_ring(priv, tx_ring, pool,
+					   ENETC_XSK_TX_BUDGET);
 
-	budget = min_t(int, budget, ENETC_XSK_TX_BUDGET);
-
-	batch = enetc_xsk_descs_to_tx_ring(priv, tx_ring, pool, budget);
-	enetc_tx_queue_unlock(tx_ring);
-
-	return budget != batch;
+	return batch != ENETC_XSK_TX_BUDGET;
 }
 
 static int enetc_xdp_rx_timestamp(const struct xdp_md *ctx, u64 *timestamp)
@@ -4290,6 +4392,8 @@ void enetc_start(struct net_device *ndev)
 
 	netif_tx_start_all_queues(ndev);
 
+	enetc_xsk_etf_resume(priv);
+
 	clear_bit(ENETC_TX_DOWN, &priv->flags);
 }
 EXPORT_SYMBOL_GPL(enetc_start);
@@ -4343,9 +4447,6 @@ int enetc_open(struct net_device *ndev)
 		goto err_alloc_rx;
 	}
 
-	priv->xsk_etf = NULL;
-	smp_store_release(&priv->xdp_etf_enabled, false);
-
 	enetc_tx_onestep_tstamp_init(priv);
 	enetc_assign_tx_resources(priv, tx_res);
 	enetc_assign_rx_resources(priv, rx_res);
@@ -4384,6 +4485,8 @@ void enetc_stop(struct net_device *ndev)
 	set_bit(ENETC_TX_DOWN, &priv->flags);
 
 	netif_tx_stop_all_queues(ndev);
+
+	enetc_xsk_etf_quiesce(priv);
 
 	enetc_disable_rx_bdrs(priv);
 

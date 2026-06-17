@@ -63,14 +63,14 @@ struct enetc_xsk_etf_sched {
 	s32 hrtimer_delay_min;
 	s32 hrtimer_delay_max;
 	s64 hrtimer_delay_sum;
-	u32 hrtimer_count;
+	u64 hrtimer_count;
 	u32 hrtimer_dropped;
 
+	u32 xsk_dropped;
 	s32 xsk_delay_min;
 	s32 xsk_delay_max;
 	s64 xsk_delay_sum;
-	u32 xsk_count;
-	u32 xsk_dropped;
+	u64 xsk_count;
 };
 
 enum enetc_mac_addr_type {UC, MC, MADDR_TYPE};
