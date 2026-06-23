@@ -590,6 +590,412 @@ static int hms_connect_tag_protocol(struct dsa_switch *ds,
 	return 0;
 }
 
+static int hms_stream_identify(struct flow_cls_offload *f, struct hms_stream *stream)
+{
+	struct flow_rule *rule = flow_cls_offload_flow_rule(f);
+	struct flow_dissector *dissector = rule->match.dissector;
+
+	if (dissector->used_keys &
+			~(BIT(FLOW_DISSECTOR_KEY_CONTROL) |
+              BIT(FLOW_DISSECTOR_KEY_BASIC) |
+              BIT(FLOW_DISSECTOR_KEY_VLAN) |
+              BIT(FLOW_DISSECTOR_KEY_ETH_ADDRS)))
+                return -EOPNOTSUPP;
+
+        if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_ETH_ADDRS)) {
+                struct flow_match_eth_addrs match;
+
+                flow_rule_match_eth_addrs(rule, &match);
+		if (is_zero_ether_addr(match.mask->src) &&
+			!is_zero_ether_addr(match.mask->dst)) {
+			ether_addr_copy(stream->mac, match.key->dst);
+			stream->type = STREAMID_NULL;
+		} else if (!is_zero_ether_addr(match.mask->src) &&
+			is_zero_ether_addr(match.mask->dst)) {
+			ether_addr_copy(stream->mac, match.key->src);
+			stream->type = STREAMID_SMAC_VLAN;
+		} else
+                        return -EOPNOTSUPP;
+        } else {
+                return -EOPNOTSUPP;
+        }
+
+	if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_VLAN)) {
+		struct flow_match_vlan match;
+
+		flow_rule_match_vlan(rule, &match);
+		if (match.mask->vlan_priority)
+			stream->prio = match.key->vlan_priority;
+		else
+			stream->prio = -1;
+
+		if (!match.mask->vlan_id)
+			return -EOPNOTSUPP;
+		stream->vid = match.key->vlan_id;
+	} else {
+		stream->vid = 0;
+	}
+
+        stream->id = f->cookie;
+
+	return 0;
+}
+
+static struct hms_stream *
+hms_stream_table_lookup(struct list_head *stream_list,
+			    struct hms_stream *stream)
+{
+	struct hms_stream *tmp;
+
+	list_for_each_entry(tmp, stream_list, list)
+		if (ether_addr_equal(tmp->mac, stream->mac) &&
+		    tmp->vid == stream->vid && tmp->port_mask == stream->port_mask &&
+		    tmp->type == stream->type)
+			return tmp;
+
+	return NULL;
+}
+
+static int hms_stream_handle_alloc(struct hms_private *priv)
+{
+	int i;
+	for (i = 0; i < MAX_SSIDS; i++) {
+		if (priv->psfp.ssids[i] == 0) {
+			priv->psfp.ssids[i] = 1;
+			priv->psfp.num_ssids++;
+			return i;
+		}
+	}
+
+	return -EINVAL;
+}
+
+static int hms_stream_handle_del(struct hms_private *priv, u32 handle)
+{
+	if (handle >= MAX_SSIDS)
+		return -EINVAL;
+
+	if (priv->psfp.ssids[handle] == 1) {
+		priv->psfp.ssids[handle] = 0;
+		priv->psfp.num_ssids--;
+	}
+
+	return 0;
+}
+
+static int hms_stream_table_add(struct hms_private *priv, struct list_head *stream_list,
+		struct hms_stream *stream, struct netlink_ext_ack *extack)
+{
+        struct hms_stream *stream_entry;
+        int rc;
+
+        stream_entry = kmemdup(stream, sizeof(*stream_entry), GFP_KERNEL);
+        if (!stream_entry)
+                return -ENOMEM;
+
+	if (stream->update) {
+		rc = hms_streamid_set(priv, stream_entry->port_mask, stream_entry->handle,
+				stream_entry->mac, stream_entry->vid, stream_entry->type);
+		if (rc) {
+			kfree(stream_entry);
+			return rc;
+		}
+	}
+
+        list_add_tail(&stream_entry->list, stream_list);
+
+        return 0;
+}
+
+static struct hms_stream *
+hms_stream_table_get(struct list_head *stream_list, unsigned long id)
+{
+	struct hms_stream *tmp;
+
+	list_for_each_entry(tmp, stream_list, list)
+		if (tmp->id == id)
+			return tmp;
+
+	return NULL;
+}
+
+static int hms_cls_flower_add(struct dsa_switch *ds, int port,
+			       struct flow_cls_offload *f, bool ingress)
+{
+	struct dsa_port *dp = dsa_to_port(ds, port);
+	struct hms_private *priv = ds->priv;
+	struct netlink_ext_ack *extack = f->common.extack;
+	const struct flow_action_entry *a;
+	struct hms_stream stream = {.action = HMS_STREAM_NULL};
+	struct hms_stream *stream_entry;
+	struct hms_psfp_list *psfp;
+	struct hms_stream_filter filter = {0};
+	int cpu_port = dp->cpu_dp->index;
+	uint64_t rate;
+	int i, rc;
+	int handle;
+	bool set_stream = false;
+
+	psfp = &priv->psfp;
+
+	rc = hms_stream_identify(f, &stream);
+	if (rc) {
+                NL_SET_ERR_MSG_MOD(extack, "Only can match on VID and dest MAC");
+                return rc;
+        }
+
+	mutex_lock(&psfp->lock);
+
+	flow_action_for_each(i, a, &f->rule->action) {
+		switch (a->id) {
+		case FLOW_ACTION_FRER:
+			if ((a->frer.recover && a->frer.tag_action == FRER_TAG_PUSH) ||
+			    (!a->frer.recover && a->frer.tag_action != FRER_TAG_PUSH)) {
+				NL_SET_ERR_MSG_MOD(extack,
+						   "Non-supported tag action");
+				rc = -EOPNOTSUPP;
+				goto err;
+			}
+
+			if (a->frer.recover) {
+				stream.action = HMS_STREAM_FRER_SEQREC;
+				filter.seqrec.enc = a->frer.tag_type;
+				filter.seqrec.alg = a->frer.rcvy_alg;
+				filter.seqrec.his_len = a->frer.rcvy_history_len;
+				filter.seqrec.reset_timeout = a->frer.rcvy_reset_msec;
+				filter.seqrec.rtag_pop_en =
+					(a->frer.tag_action == FRER_TAG_POP) ? 1 : 0;
+				if (ingress) {
+					stream.port_mask = 0xF & ~BIT(cpu_port);
+					filter.seqrec.eport = cpu_port;
+				} else {
+					stream.port_mask = 0xF & ~BIT(port);
+					filter.seqrec.eport = port;
+				}
+			} else {
+				stream.action = HMS_STREAM_FRER_SEQGEN;
+				filter.seqgen.enc = a->frer.tag_type;
+				if (ingress) {
+					filter.seqgen.iport = port;
+					stream.port_mask = BIT(port);
+				} else {
+					filter.seqgen.iport = cpu_port;
+					stream.port_mask = BIT(cpu_port);
+				}
+			}
+			set_stream = true;
+			break;
+
+		case FLOW_ACTION_GATE:
+			stream.port_mask = BIT(port);
+			stream.action = HMS_STREAM_QCI;
+			filter.qci.gate.prio = a->gate.prio;
+			filter.qci.gate.basetime = a->gate.basetime;
+			filter.qci.gate.cycletime = a->gate.cycletime;
+			filter.qci.gate.cycletimeext = a->gate.cycletimeext;
+			filter.qci.gate.num_entries = a->gate.num_entries;
+			filter.qci.gate.entries = a->gate.entries;
+			set_stream = true;
+			break;
+
+		case FLOW_ACTION_POLICE:
+			stream.port_mask = BIT(port);
+			stream.action = HMS_STREAM_QCI;
+			if (a->police.mtu < 0) {
+				NL_SET_ERR_MSG_MOD(extack,
+						"invalided maxsdu size");
+				rc = -EINVAL;
+				goto err;
+			}
+			filter.qci.maxsdu = a->police.mtu;
+
+			rate = a->police.rate_bytes_ps;
+			if (rate) {
+				filter.qci.police.burst = a->police.burst;
+				filter.qci.police.rate = rate * 8;
+			}
+			set_stream = true;
+			break;
+
+		case FLOW_ACTION_MIRRED:
+			if (stream.type != STREAMID_NULL) {
+				NL_SET_ERR_MSG_MOD(extack,
+						"Only support destination MAC");
+				rc = -EOPNOTSUPP;
+				goto err;
+			}
+			dp = dsa_port_from_netdev(a->dev);
+			if (IS_ERR(dp)) {
+				rc = -EINVAL;
+				goto err;
+			}
+			if (hms_fdb_entry_add(priv, stream.mac, stream.vid, dp->index) < 0) {
+				rc = -EINVAL;
+				goto err;
+			}
+			break;
+
+		default:
+			rc = -EOPNOTSUPP;
+			goto err;
+		}
+	}
+
+	if (!set_stream)
+		goto exit;
+
+	stream_entry = hms_stream_table_lookup(&psfp->stream_list, &stream);
+	if (stream_entry) {
+		stream.handle = stream_entry->handle;
+		stream.update = false;
+	} else {
+		handle = hms_stream_handle_alloc(priv);
+		if (handle < 0) {
+			rc = handle;
+			goto err;
+		}
+		stream.handle = handle;
+		stream.update = true;
+	}
+
+	rc = hms_stream_table_add(priv, &psfp->stream_list,
+			&stream, extack);
+	if (rc) {
+                NL_SET_ERR_MSG_MOD(extack, "Failed to add new stream table");
+		goto err;
+	}
+
+	filter.stream_handle = stream.handle;
+
+	switch (stream.action) {
+		case HMS_STREAM_FRER_SEQGEN:
+			rc = hms_frer_seqgen(priv, &filter);
+			if (rc) {
+				goto err;
+			}
+			break;
+		case HMS_STREAM_FRER_SEQREC:
+			rc = hms_frer_seqrec(priv, &filter);
+			if (rc) {
+				goto err;
+			}
+			break;
+		case HMS_STREAM_QCI:
+			filter.qci.priority_spec = stream.prio;
+			rc = hms_qci_set(priv, &filter, port);
+			if (rc) {
+				goto err;
+			}
+			break;
+		default:
+			mutex_unlock(&psfp->lock);
+			return -EOPNOTSUPP;
+	}
+
+exit:
+	mutex_unlock(&psfp->lock);
+
+	return 0;
+err:
+	mutex_unlock(&psfp->lock);
+
+	return rc;
+}
+
+static int hms_cls_flower_del(struct dsa_switch *ds, int port,
+			       struct flow_cls_offload *cls, bool ingress)
+{
+	struct hms_private *priv = ds->priv;
+	struct hms_stream *stream, *tmp;
+	struct hms_psfp_list *psfp;
+	u32 stream_handle;
+	int rc;
+
+	psfp = &priv->psfp;
+
+	mutex_lock(&psfp->lock);
+
+	stream = hms_stream_table_get(&psfp->stream_list, cls->cookie);
+	if (!stream) {
+		mutex_unlock(&psfp->lock);
+		return 0;
+	}
+
+	stream_handle = stream->handle;
+
+	switch (stream->action) {
+	case HMS_STREAM_FRER_SEQGEN:
+		rc = hms_frer_sg_del(priv, stream_handle, port);
+		if (rc)
+			goto err;
+		break;
+	case HMS_STREAM_FRER_SEQREC:
+		rc = hms_frer_sr_del(priv, stream_handle, port);
+		if (rc)
+			goto err;
+		break;
+	case HMS_STREAM_QCI:
+		rc = hms_qci_del(priv, stream_handle, port);
+		if (rc)
+			goto err;
+		break;
+	default:
+		mutex_unlock(&psfp->lock);
+		return -EOPNOTSUPP;
+	}
+
+	list_del(&stream->list);
+
+	tmp = hms_stream_table_lookup(&psfp->stream_list, stream);
+	if (!tmp) {
+		rc = hms_streamid_del(priv, stream->handle);
+		if (rc)
+			goto err;
+		rc = hms_stream_handle_del(priv, stream->handle);
+		if (rc)
+			goto err;
+	}
+
+	kfree(stream);
+	mutex_unlock(&psfp->lock);
+
+	return 0;
+
+err:
+	mutex_unlock(&psfp->lock);
+	return rc;
+}
+
+static int hms_cls_flower_stats(struct dsa_switch *ds, int port,
+			       struct flow_cls_offload *cls, bool ingress)
+{
+	struct hms_private *priv = ds->priv;
+	struct hms_psfp_list *psfp;
+	struct hms_stream *stream;
+	struct flow_stats stats;
+	int rc;
+
+	psfp = &priv->psfp;
+
+	mutex_lock(&psfp->lock);
+
+	stream = hms_stream_table_get(&psfp->stream_list, cls->cookie);
+	if (!stream) {
+		mutex_unlock(&psfp->lock);
+		return 0;
+	}
+	mutex_unlock(&psfp->lock);
+
+	rc = hms_qci_get(priv, stream->handle, &stats);
+	if (rc < 0)
+		return rc;
+
+	flow_stats_update(&cls->stats, 0x0, stats.pkts, stats.drops, 0x0,
+			  FLOW_ACTION_HW_STATS_IMMEDIATE);
+
+	return 0;
+}
+
 static int hms_port_mqprio_set(struct dsa_switch *ds, int port,
 				struct tc_mqprio_qopt_offload *mqprio)
 {
@@ -947,6 +1353,9 @@ static const struct dsa_switch_ops hms_switch_ops = {
 	.tag_8021q_vlan_add	= hms_8021q_vlan_add,
 	.tag_8021q_vlan_del	= hms_8021q_vlan_del,
 	.port_prechangeupper	= hms_prechangeupper,
+	.cls_flower_add		= hms_cls_flower_add,
+	.cls_flower_del		= hms_cls_flower_del,
+	.cls_flower_stats	= hms_cls_flower_stats,
 	.port_setup_tc		= hms_port_setup_tc,
 	.set_mm			= hms_port_set_mm,
 	.get_mm			= hms_port_get_mm,
