@@ -341,7 +341,23 @@ static int vf610_gpio_probe(struct platform_device *pdev)
 	girq->default_type = IRQ_TYPE_NONE;
 	girq->handler = handle_edge_irq;
 
+	platform_set_drvdata(pdev, port);
+
 	return devm_gpiochip_add_data(dev, gc, port);
+}
+
+static void vf610_gpio_shutdown(struct platform_device *pdev)
+{
+	struct vf610_gpio_port *port = platform_get_drvdata(pdev);
+	struct gpio_chip *gc = &port->chip.gc;
+	int i;
+
+	/* Mask all GPIO interrupts */
+	for (i = 0; i < gc->ngpio; i++)
+		vf610_gpio_writel(0, port->base + PORT_PCR(i));
+
+	/* Clear the interrupt status register for all GPIO's */
+	vf610_gpio_writel(~0, port->base + PORT_ISFR);
 }
 
 static struct platform_driver vf610_gpio_driver = {
@@ -350,6 +366,7 @@ static struct platform_driver vf610_gpio_driver = {
 		.of_match_table = vf610_gpio_dt_ids,
 	},
 	.probe		= vf610_gpio_probe,
+	.shutdown	= vf610_gpio_shutdown,
 };
 
 module_platform_driver(vf610_gpio_driver);
