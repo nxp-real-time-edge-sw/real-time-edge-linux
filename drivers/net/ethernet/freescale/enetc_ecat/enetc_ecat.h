@@ -606,7 +606,9 @@ void ecat_enetc_stop(struct net_device *ndev);
 netdev_tx_t enetc_xmit(struct sk_buff *skb, struct net_device *ndev);
 netdev_tx_t ecat_enetc_xmit(struct sk_buff *skb, struct net_device *ndev);
 int enetc4_ecat_fast_xmit(struct net_device *ndev, void __user *buff, size_t len);
-int enetc4_ecat_fast_recv(struct net_device *ndev, void __user *buff, size_t len, struct sockaddr __user *addr,  int *addr_len);
+int enetc4_ecat_fast_recv(struct net_device *ndev, void __user *buff,
+				size_t len, struct sockaddr __user *addr,
+				int __user *addr_len);
 struct net_device_stats *ecat_enetc_get_stats(struct net_device *ndev);
 void ecat_enetc_set_features(struct net_device *ndev, netdev_features_t features);
 int ecat_enetc_enetc_ioctl(struct net_device *ndev, struct ifreq *rq, int cmd);

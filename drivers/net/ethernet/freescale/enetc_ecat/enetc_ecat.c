@@ -1526,7 +1526,7 @@ static int enetc_ecat_map_tx_buffs(struct enetc_bdr *tx_ring, void __user *buff,
 	if (!skb)
 		return -ENOBUFS;
 
-	int len = buff_len;
+	size_t len = buff_len;
 	if (unlikely(!len || len > skb_tailroom(skb)))
 		return -EMSGSIZE;
 
@@ -1534,6 +1534,9 @@ static int enetc_ecat_map_tx_buffs(struct enetc_bdr *tx_ring, void __user *buff,
 	if (copy_from_user(skb->data, buff, buff_len)) {
 		return -EFAULT;
 	}
+
+	skb_put(skb, len);
+
 	/* Push the data cache so the CPM does not get stale memory data. */
 	dma_sync_single_for_device(tx_ring->dev, tx_swbd->dma,
 				   len, DMA_TO_DEVICE);
@@ -2925,11 +2928,8 @@ EXPORT_SYMBOL_GPL(ecat_enetc_open);
 void ecat_enetc_stop(struct net_device *ndev)
 {
 	struct enetc_ndev_priv *priv = netdev_priv(ndev);
-	int i;
 
 	set_bit(ENETC_TX_DOWN, &priv->flags);
-
-	//netif_tx_stop_all_queues(ndev);
 
 	enetc_disable_rx_bdrs(priv);
 
@@ -2937,15 +2937,6 @@ void ecat_enetc_stop(struct net_device *ndev)
 
 	enetc_disable_tx_bdrs(priv);
 
-	for (i = 0; i < priv->bdr_int_num; i++) {
-		int irq = pci_irq_vector(priv->si->pdev,
-					 ENETC_BDR_INT_BASE_IDX + i);
-
-		disable_irq(irq);
-		napi_synchronize(&priv->int_vector[i]->napi);
-		napi_disable(&priv->int_vector[i]->napi);
-	}
-	//mutex_lock(&priv->fast_ndev_lock);
 	enetc_clear_interrupts(priv);
 }
 EXPORT_SYMBOL_GPL(ecat_enetc_stop);

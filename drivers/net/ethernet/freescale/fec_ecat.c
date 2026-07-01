@@ -758,11 +758,13 @@ static void fec_enet_timeout_work(struct work_struct *work)
 	}
 }
 
-// must be powers of 2
+/* must be powers of 2 */
 #define MAX_TX_BUF (64)
 #define MAX_RX_BUF (64)
 
-static int fec_ecat_recv_from_queue(struct net_device *ndev, void __user *buff, size_t len, struct sockaddr __user *addr,  int *addr_len)
+static int fec_ecat_recv_from_queue(struct net_device *ndev, void __user *buff,
+				    size_t len, struct sockaddr __user *addr,
+				    int __user *addr_len)
 {
 	struct fec_enet_private *fep = netdev_priv(ndev);
 	struct fec_enet_priv_rx_q *rxq = fep->rx_queue;
@@ -884,7 +886,9 @@ rx_processing_done:
 	return recv_len;
 }
 
-static int fec_ecat_fast_recv(struct net_device *ndev, void __user *buff, size_t len, struct sockaddr __user *addr,  int *addr_len)
+static int fec_ecat_fast_recv(struct net_device *ndev, void __user *buff,
+			      size_t len, struct sockaddr __user *addr,
+			      int __user *addr_len)
 {
 	struct fec_enet_private *fep = netdev_priv(ndev);
 	int ret;
