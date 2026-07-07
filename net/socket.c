@@ -113,22 +113,30 @@
 
 #include "core/dev.h"
 
-static struct socket *fast_raw_socket_sock = NULL;
+static struct socket *fast_raw_socket_sock;
+/* the EtherCAT redundancy socket */
+static struct socket *fast_raw_socket_sock_red;
 static DEFINE_MUTEX(fast_raw_socket_lock);
+
+static void fast_raw_socket_init(void)
+{
+	WRITE_ONCE(fast_raw_socket_sock, NULL);
+	WRITE_ONCE(fast_raw_socket_sock_red, NULL);
+}
 
 static struct net_device *fast_raw_socket_dev_get(struct socket *sock, bool tx)
 {
-	struct net_device *dev;
+	struct net_device *ndev;
 	const struct net_device_ops *ops;
 
-	if (sock != READ_ONCE(fast_raw_socket_sock))
+	if (sock != READ_ONCE(fast_raw_socket_sock) && sock != READ_ONCE(fast_raw_socket_sock_red))
 		return NULL;
 
-	dev = READ_ONCE(sock->ndev);
-	if (!dev || !READ_ONCE(dev->fast_raw_device))
+	ndev = READ_ONCE(sock->ndev);
+	if (!ndev || !READ_ONCE(ndev->fast_raw_device))
 		return NULL;
 
-	ops = dev->netdev_ops;
+	ops = ndev->netdev_ops;
 	if (!ops)
 		return NULL;
 
@@ -137,7 +145,7 @@ static struct net_device *fast_raw_socket_dev_get(struct socket *sock, bool tx)
 	if (!tx && !ops->ndo_fast_recv)
 		return NULL;
 
-	return dev;
+	return ndev;
 }
 
 #ifdef CONFIG_NET_RX_BUSY_POLL
@@ -706,6 +714,8 @@ static void __sock_release(struct socket *sock, struct inode *inode)
 	mutex_lock(&fast_raw_socket_lock);
 	if (READ_ONCE(fast_raw_socket_sock) == sock)
 		WRITE_ONCE(fast_raw_socket_sock, NULL);
+	else if (READ_ONCE(fast_raw_socket_sock_red) == sock)
+		WRITE_ONCE(fast_raw_socket_sock_red, NULL);
 	mutex_unlock(&fast_raw_socket_lock);
 
 	WRITE_ONCE(sock->file, NULL);
@@ -1928,6 +1938,7 @@ int __sys_bind(int fd, struct sockaddr __user *umyaddr, int addrlen)
 {
 	struct socket *sock;
 	struct sockaddr_storage address;
+	struct sockaddr_ll *sll;
 	CLASS(fd, f)(fd);
 	int err;
 
@@ -1945,11 +1956,22 @@ int __sys_bind(int fd, struct sockaddr __user *umyaddr, int addrlen)
 
 	if (!err && sock->sk) {
 		if (sock->type == SOCK_RAW && sock->sk->sk_family == PF_PACKET) {
-			if (sock->ndev != NULL && sock->ndev->fast_raw_device == 1) {
-				mutex_lock(&fast_raw_socket_lock);
-				if (!READ_ONCE(fast_raw_socket_sock))
-					WRITE_ONCE(fast_raw_socket_sock, sock);
-				mutex_unlock(&fast_raw_socket_lock);
+			struct net_device *ndev = READ_ONCE(sock->ndev);
+
+			if (ndev && READ_ONCE(ndev->fast_raw_device) == 1) {
+				sll = (struct sockaddr_ll *)&address;
+				if (address.ss_family == AF_PACKET &&
+				    addrlen >= sizeof(struct sockaddr_ll) &&
+				    sll->sll_protocol == htons(0x88a4)) {
+					mutex_lock(&fast_raw_socket_lock);
+					if (!READ_ONCE(fast_raw_socket_sock))
+						WRITE_ONCE(fast_raw_socket_sock, sock);
+					else if (!READ_ONCE(fast_raw_socket_sock_red))
+						WRITE_ONCE(fast_raw_socket_sock_red, sock);
+					else
+						pr_warn_once("fast_raw_socket: all slots full, socket not registered\n");
+					mutex_unlock(&fast_raw_socket_lock);
+				}
 			}
 		}
 	}
@@ -3375,6 +3397,11 @@ static int __init sock_init(void)
 	err = net_sysctl_init();
 	if (err)
 		goto out;
+
+	/*
+	 *      Initialize the fast_raw_socket infrastructure.
+	 */
+	fast_raw_socket_init();
 
 	/*
 	 *      Initialize skbuff SLAB cache
