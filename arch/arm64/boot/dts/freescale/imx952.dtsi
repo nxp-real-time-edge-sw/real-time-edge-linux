@@ -2501,7 +2501,7 @@
 				     <GIC_SPI 289 IRQ_TYPE_LEVEL_HIGH>,
 				     <GIC_SPI 290 IRQ_TYPE_LEVEL_HIGH>;
 			interrupt-names = "gpu", "job", "mmu";
-			clocks = <&scmi_clk IMX952_CLK_GPU>;
+			clocks = <&scmi_clk IMX952_CLK_CGC_GPU>;
 			clock-names = "gpu";
 			power-domains = <&scmi_devpd IMX952_PD_GPU>, <&scmi_perf IMX952_PERF_GPU>;
 			power-domain-names = "gpumix", "gpuperf";
