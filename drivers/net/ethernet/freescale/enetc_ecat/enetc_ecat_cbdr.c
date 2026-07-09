@@ -137,7 +137,7 @@ int ecat_enetc_clear_mac_flt_entry(struct enetc_si *si, int index)
 EXPORT_SYMBOL_GPL(ecat_enetc_clear_mac_flt_entry);
 
 int ecat_enetc_set_mac_flt_entry(struct enetc_si *si, int index,
-			    char *mac_addr, int si_map)
+				char *mac_addr, int si_map)
 {
 	struct enetc_cbd cbd;
 	u32 upper;
@@ -164,7 +164,7 @@ EXPORT_SYMBOL_GPL(ecat_enetc_set_mac_flt_entry);
 
 /* Set entry in RFS table */
 int ecat_enetc_set_fs_entry(struct enetc_si *si, struct enetc_cmd_rfse *rfse,
-		       int index)
+			   int index)
 {
 	struct enetc_cbdr *ring = &si->cbd_ring;
 	struct enetc_cbd cbd = {.cmd = 0};
@@ -179,7 +179,7 @@ int ecat_enetc_set_fs_entry(struct enetc_si *si, struct enetc_cmd_rfse *rfse,
 	cbd.opt[3] = cpu_to_le32(0); /* SI */
 
 	tmp = enetc_cbd_alloc_data_mem(si, &cbd, sizeof(*rfse),
-				       &dma, &tmp_align);
+					   &dma, &tmp_align);
 	if (!tmp)
 		return -ENOMEM;
 
@@ -196,7 +196,7 @@ int ecat_enetc_set_fs_entry(struct enetc_si *si, struct enetc_cmd_rfse *rfse,
 EXPORT_SYMBOL_GPL(ecat_enetc_set_fs_entry);
 
 static int enetc_cmd_rss_table(struct enetc_si *si, u32 *table, int count,
-			       bool read)
+				   bool read)
 {
 	struct enetc_cbdr *ring = &si->cbd_ring;
 	struct enetc_cbd cbd = {.cmd = 0};
@@ -209,7 +209,7 @@ static int enetc_cmd_rss_table(struct enetc_si *si, u32 *table, int count,
 		return -EINVAL;
 
 	tmp = enetc_cbd_alloc_data_mem(si, &cbd, count,
-				       &dma, (void *)&tmp_align);
+					   &dma, (void *)&tmp_align);
 	if (!tmp)
 		return -ENOMEM;
 
@@ -250,12 +250,12 @@ EXPORT_SYMBOL_GPL(ecat_enetc_set_rss_table);
 
 int ecat_enetc4_get_rss_table(struct enetc_si *si, u32 *table, int count)
 {
-    return ntmp_rsst_query_entry(&si->ntmp_user, table, count);
+	return ntmp_rsst_query_entry(&si->ntmp_user, table, count);
 }
 EXPORT_SYMBOL_GPL(ecat_enetc4_get_rss_table);
 
 int ecat_enetc4_set_rss_table(struct enetc_si *si, const u32 *table, int count)
 {
-    return ntmp_rsst_update_entry(&si->ntmp_user, table, count);
+	return ntmp_rsst_update_entry(&si->ntmp_user, table, count);
 }
 EXPORT_SYMBOL_GPL(ecat_enetc4_set_rss_table);
