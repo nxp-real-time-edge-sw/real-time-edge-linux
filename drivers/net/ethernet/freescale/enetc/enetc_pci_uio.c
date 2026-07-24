@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR BSD-3-Clause)
-/* Copyright 2025 NXP */
+/* Copyright 2025-2026 NXP */
 
 /* enetc_pci_uio - Generic ENETC PCI UIO driver
  *
@@ -81,18 +81,6 @@ static int release(struct uio_info *info, struct inode *inode)
 	return 0;
 }
 
-/* Interrupt handler. Read/modify/write the command register to disable the interrupt. */
-static irqreturn_t irqhandler(int irq, struct uio_info *info)
-{
-	struct enetc_pci_uio_dev *udev = to_enetc_pci_uio_dev(info);
-
-	if (!pci_check_and_mask_intx(udev->pdev))
-		return IRQ_NONE;
-
-	/* UIO core will signal the user process. */
-	return IRQ_HANDLED;
-}
-
 static void enetc4_mac_config(struct enetc_pf *pf, unsigned int mode, phy_interface_t phy_mode)
 {
 	struct enetc_pci_uio_dev *udev = pf->si->priv;
@@ -154,23 +142,18 @@ static void enetc4_pl_mac_config(struct phylink_config *config, unsigned int mod
 
 static void enetc4_set_port_speed(struct enetc_ndev_priv *priv, int speed)
 {
-	u32 old_speed = priv->speed;
-	u32 val;
+	u32 val = enetc_port_rd(&priv->si->hw, ENETC4_PCR);
 
-	if (speed == old_speed)
-		return;
-
-	val = enetc_port_rd(&priv->si->hw, ENETC4_PCR);
 	val &= ~PCR_PSPEED;
 
 	switch (speed) {
-	case SPEED_10:
 	case SPEED_100:
 	case SPEED_1000:
 	case SPEED_2500:
 	case SPEED_10000:
 		val |= (PCR_PSPEED & PCR_PSPEED_VAL(speed));
 		break;
+	case SPEED_10:
 	default:
 		val |= (PCR_PSPEED & PCR_PSPEED_VAL(SPEED_10));
 	}
@@ -304,36 +287,17 @@ static void enetc4_set_tx_pause(struct enetc_pf *pf, int num_rxbdr, bool tx_paus
 
 static void enetc4_enable_mac(struct enetc_pf *pf, bool en)
 {
+	struct enetc_hw *hw = &pf->si->hw;
 	struct enetc_si *si = pf->si;
 	u32 val;
+
+	enetc_port_wr(hw, ENETC4_POR, en ? 0 : POR_TXDIS | POR_RXDIS);
 
 	val = enetc_port_mac_rd(si, ENETC4_PM_CMD_CFG(0));
 	val &= ~(PM_CMD_CFG_TX_EN | PM_CMD_CFG_RX_EN);
 	val |= en ? (PM_CMD_CFG_TX_EN | PM_CMD_CFG_RX_EN) : 0;
 
 	enetc_port_mac_wr(si, ENETC4_PM_CMD_CFG(0), val);
-}
-
-static void enetc4_pf_send_link_status_msg(struct enetc_pf *pf, bool up)
-{
-	struct device *dev = &pf->si->pdev->dev;
-	union enetc_pf_msg pf_msg;
-	u16 ms_mask = 0;
-	int i, err;
-
-	for (i = 0; i < pf->num_vfs; i++)
-		if (pf->vf_link_status_notify[i])
-			ms_mask |= PSIMSGSR_MS(i);
-
-	if (!ms_mask)
-		return;
-
-	pf_msg.class_id = ENETC_MSG_CLASS_ID_LINK_STATUS;
-	pf_msg.class_code = up ? ENETC_PF_NC_LINK_STATUS_UP : ENETC_PF_NC_LINK_STATUS_DOWN;
-
-	err = enetc_pf_send_msg(pf, pf_msg.code, ms_mask);
-	if (err)
-		dev_err(dev, "PF notifies link status failed\n");
 }
 
 static void enetc4_pl_mac_link_up(struct phylink_config *config,
@@ -378,7 +342,7 @@ static void enetc4_pl_mac_link_up(struct phylink_config *config,
 	enetc_port_mac_wr(pf->si, ENETC4_PM_LPWAKE_TIMER(0), 0);
 #endif
 
-	enetc4_pf_send_link_status_msg(pf, true);
+	enetc_pf_send_link_status_msg(pf, true);
 }
 
 static void enetc4_pl_mac_link_down(struct phylink_config *config, unsigned int mode,
@@ -386,7 +350,7 @@ static void enetc4_pl_mac_link_down(struct phylink_config *config, unsigned int 
 {
 	struct enetc_pf *pf = phylink_to_enetc_pf(config);
 
-	enetc4_pf_send_link_status_msg(pf, false);
+	enetc_pf_send_link_status_msg(pf, false);
 	enetc4_enable_mac(pf, false);
 }
 
@@ -539,9 +503,9 @@ static int enetc_probe_enetc_port(struct pci_dev *pdev, struct enetc_pci_uio_dev
 	si->priv = udev;
 	udev->np = priv;
 
-	priv->ref_clk = devm_clk_get_optional(dev, "enet_ref_clk");
+	priv->ref_clk = devm_clk_get_optional(dev, "ref");
 	if (IS_ERR(priv->ref_clk)) {
-		dev_err(dev, "Get enet_ref_clk failed\n");
+		dev_err(dev, "Get reference clock failed\n");
 		err = PTR_ERR(priv->ref_clk);
 		goto err_clk_get;
 	}
@@ -647,11 +611,6 @@ static int enetc_pci_uio_probe(struct pci_dev *pdev, const struct pci_device_id 
 	udev->info.version = DRIVER_VERSION;
 	udev->info.release = release;
 	udev->pdev = pdev;
-	if (pdev->irq && pdev->irq != IRQ_NOTCONNECTED) {
-		udev->info.irq = pdev->irq;
-		udev->info.irq_flags = IRQF_SHARED;
-		udev->info.handler = irqhandler;
-	}
 
 	uiomem = &udev->info.mem[0];
 	for (i = 0; i < MAX_UIO_MAPS; ++i) {
