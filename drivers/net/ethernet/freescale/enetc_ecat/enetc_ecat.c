@@ -1535,8 +1535,6 @@ static int enetc_ecat_map_tx_buffs(struct enetc_bdr *tx_ring, void __user *buff,
 		return -EFAULT;
 	}
 
-	skb_put(skb, len);
-
 	/* Push the data cache so the CPM does not get stale memory data. */
 	dma_sync_single_for_device(tx_ring->dev, tx_swbd->dma,
 				   len, DMA_TO_DEVICE);

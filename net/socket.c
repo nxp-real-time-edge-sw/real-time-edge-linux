@@ -1961,8 +1961,7 @@ int __sys_bind(int fd, struct sockaddr __user *umyaddr, int addrlen)
 			if (ndev && READ_ONCE(ndev->fast_raw_device) == 1) {
 				sll = (struct sockaddr_ll *)&address;
 				if (address.ss_family == AF_PACKET &&
-				    addrlen >= sizeof(struct sockaddr_ll) &&
-				    sll->sll_protocol == htons(0x88a4)) {
+				    addrlen >= sizeof(struct sockaddr_ll)) {
 					mutex_lock(&fast_raw_socket_lock);
 					if (!READ_ONCE(fast_raw_socket_sock))
 						WRITE_ONCE(fast_raw_socket_sock, sock);
